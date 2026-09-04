@@ -1,0 +1,35 @@
+{
+  "name": "levante-offline-launcher",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:emulator": "vite build --mode emulator",
+    "test:offline": "node test/offline-run.mjs",
+    "preview": "vite preview --port 4173 --host",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/core": "^8.5.1",
+    "@capacitor/ios": "^8.5.1",
+    "@levante-framework/core-tasks": "file:../core-tasks/task-launcher",
+    "idb": "^8.0.0",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.1",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "playwright": "^1.62.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "vite-plugin-node-polyfills": "^0.28.0",
+    "vite-plugin-pwa": "^0.21.1",
+    "vue-tsc": "^2.2.0",
+    "workbox-core": "^7.4.1",
+    "workbox-precaching": "^7.4.1",
+    "workbox-routing": "^7.4.1"
+  }
+}

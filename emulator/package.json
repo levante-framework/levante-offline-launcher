@@ -1,0 +1,14 @@
+{
+  "name": "levante-offline-spike-emulator",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "PATH=/opt/homebrew/opt/openjdk/bin:$PATH firebase emulators:start --only auth,firestore,functions --project demo-levante-spike",
+    "seed": "node seed.mjs",
+    "inspect": "node inspect.mjs"
+  },
+  "dependencies": {
+    "@levante-framework/permissions-core": "^1.2.1",
+    "firebase-admin": "^13.0.0"
+  }
+}

@@ -1,0 +1,21 @@
+node_modules/
+dist/
+dev-dist/
+# Packs are large binary mirrors of the public bucket; regenerate with pack-builder.
+shell/public/pack/
+*.log
+.DS_Store
+# Capacitor native build outputs (the generated projects themselves are kept)
+shell/android/build/
+shell/android/app/build/
+shell/android/.gradle/
+shell/ios/App/build/
+shell/ios/App/App/public/
+shell/ios/App/Pods/
+shell/android/app/src/main/assets/public/
+shell/android/app/src/main/assets/capacitor.config.json
+shell/android/app/src/main/assets/capacitor.plugins.json
+shell/ios/App/App/capacitor.config.json
+shell/test/out/
+emulator/firestore-debug.log
+emulator/ui-debug.log

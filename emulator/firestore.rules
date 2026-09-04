@@ -1,0 +1,322 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ============ CORE AUTH ============
+    function isAuthed() { return request.auth != null; }
+    function getUid()   { return request.auth.uid; }
+
+    // ============ NEW PERMISSION SYSTEM ============
+
+    match /system/permissions {
+      allow read: if isAuthed()
+    }
+
+    // Permissions registry (unchanged)
+    function getSystemPermissions() {
+      return get(/databases/$(database)/documents/system/permissions).data.get('permissions', {});
+    }
+
+    function roleHasAction(roleName, resource, action) {
+      let p = getSystemPermissions();
+      return p.get(roleName, {}).get(resource, []).hasAny([action]);
+    }
+
+    function roleHasGroupAction(roleName, groupType, action) {
+      let p = getSystemPermissions();
+      return p.get(roleName, {}).get('groups', {}).get(groupType, []).hasAny([action]);
+    }
+
+    // Flat role presence (e.g., super_admin)
+    function hasRole(role) {
+      return request.auth.token.get('rolesSet', []).hasAny([role]);
+    }
+
+    // Site-scoped role presence. Note: "site" == "district".
+    function hasRoleForSite(role, siteId) {
+      return request.auth.token
+        .get('siteRoles', {})
+        .get(siteId, [])
+        .hasAny([role]);
+    }
+
+    // Highest role (purely for non-site-scoped lookups)
+    function getHighestRole() {
+      // Order matters: strongest first
+      return hasRole('super_admin')         ? 'super_admin' :
+             hasRole('site_admin')          ? 'site_admin' :
+             hasRole('admin')               ? 'admin' :
+             hasRole('research_assistant')  ? 'research_assistant' : 'participant';
+    }
+
+    function hasPermission(resource, action) {
+      return roleHasAction(getHighestRole(), resource, action);
+    }
+
+    // ----- Site-scoped permission helpers (no where/loops) -----
+    // Returns true if the user has (roleAllows(resource, action) ∧ role present for ANY of the provided siteIds).
+    // We achieve "ANY" by building a boolean over up to a bounded number of IDs.
+    //
+    // IMPORTANT: Firestore rules don't let us loop unknown-length arrays.
+    // Enforce a sane max N for siteIds you pass in (e.g., queries should constrain to 1 siteId or a very small set).
+    // Below we support up to 10 siteIds; raise or lower to taste, but keep bounded.
+    function _anySiteWithRole(role, siteIds) {
+      // expand up to 10 elements safely
+      let s0  = siteIds.size() > 0  && hasRoleForSite(role, siteIds[0]);
+      let s1  = siteIds.size() > 1  && hasRoleForSite(role, siteIds[1]);
+      let s2  = siteIds.size() > 2  && hasRoleForSite(role, siteIds[2]);
+      let s3  = siteIds.size() > 3  && hasRoleForSite(role, siteIds[3]);
+      let s4  = siteIds.size() > 4  && hasRoleForSite(role, siteIds[4]);
+      let s5  = siteIds.size() > 5  && hasRoleForSite(role, siteIds[5]);
+      let s6  = siteIds.size() > 6  && hasRoleForSite(role, siteIds[6]);
+      let s7  = siteIds.size() > 7  && hasRoleForSite(role, siteIds[7]);
+      let s8  = siteIds.size() > 8  && hasRoleForSite(role, siteIds[8]);
+      let s9  = siteIds.size() > 9  && hasRoleForSite(role, siteIds[9]);
+      return s0 || s1 || s2 || s3 || s4 || s5 || s6 || s7 || s8 || s9;
+    }
+
+    function hasSitePermissionForSiteIds(siteIds, resource, action) {
+      return hasRole('super_admin') ||
+             (roleHasAction('site_admin',          resource, action) && _anySiteWithRole('site_admin',         siteIds)) ||
+             (roleHasAction('admin',               resource, action) && _anySiteWithRole('admin',              siteIds)) ||
+             (roleHasAction('research_assistant',  resource, action) && _anySiteWithRole('research_assistant', siteIds));
+    }
+
+    function hasSiteGroupPermissionForSiteIds(siteIds, groupType, action) {
+      return hasRole('super_admin') ||
+             (roleHasGroupAction('site_admin', groupType, action) && _anySiteWithRole('site_admin', siteIds)) ||
+             (roleHasGroupAction('admin', groupType, action) && _anySiteWithRole('admin', siteIds)) ||
+             (roleHasGroupAction('research_assistant', groupType, action) && _anySiteWithRole('research_assistant', siteIds));
+    }
+
+    // Unified “am I an admin for these sites?”
+    function hasAdminPermission(permissionResource, action, targetSites) {
+      return hasSitePermissionForSiteIds(targetSites, permissionResource, action);
+    }
+
+    // ============ KEY VALIDATION HELPERS (unchanged) ============
+    function keysNotUpdated(keys) { return !request.resource.data.diff(resource.data).affectedKeys().hasAny(keys); }
+    function onlyTheseKeysUpdated(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+
+    match /userClaims/{uid} {
+      function myData() { return uid == getUid(); }
+      allow read: if isAuthed() && myData()
+    }
+
+    // ============ USERS ============
+    match /users/{uid} {
+      function myData() { return uid == getUid(); }
+
+      // required for parent survey
+      function isParentOfUser() {
+        // Avoid self-referential reads of /users/{uid} which can cause recursive rule evaluation.
+        return uid != getUid()
+          && get(/databases/$(database)/documents/users/$(getUid())).data.userType == 'parent'
+          && resource.data.parentIds.hasAny([getUid()]);
+      }
+
+      // TARGET USER SITES (aka districts)
+      function getTargetUserSites() {
+        return get(/databases/$(database)/documents/users/$(uid)).data.get(['districts', 'current'], []);
+      }
+
+      function canReadUser() {
+        return myData() || hasAdminPermission('users', 'read', getTargetUserSites()) || isParentOfUser();
+      }
+
+      allow list: if isAuthed() && (getHighestRole() != 'participant')
+      allow read: if isAuthed() && canReadUser();
+      allow update: if isAuthed() && myData()
+
+      match /surveyResponses/{responseId=**} { 
+        allow read: if isAuthed() && (myData() || hasAdminPermission('users', 'read', getTargetUserSites())); 
+        allow create: if isAuthed() && (myData() || hasAdminPermission('users', 'read', getTargetUserSites()));
+        allow update: if isAuthed() && (myData() || hasAdminPermission('users', 'read', getTargetUserSites()));
+      }
+
+      match /runs/{runId} {
+        // For runs we keep the user-centric check
+        function canReadRun() {
+          return myData() || hasAdminPermission('users', 'read', getTargetUserSites());
+        }
+        allow read: if isAuthed() && canReadRun();
+        allow create: if isAuthed() && myData();
+        allow update: if isAuthed() && myData();
+
+        match /trials/{trialId} {
+          function canReadTrial() { return isAuthed() && (myData() || hasAdminPermission('users', 'read', getTargetUserSites())); }
+          allow read: if isAuthed() && canReadTrial();
+          allow create: if isAuthed() && myData();
+        }
+      }
+    }
+
+    // Collection-group queries are evaluated at the top level and cannot be nested under their parent documents
+    match /{parentPath=**}/assignments/{administrationId} {
+      function myData() {
+        return parentPath == ('users/' + getUid());
+      }
+
+      function getTargetSites() {
+        return get(/databases/$(database)/documents/$(parentPath)).data.get(['districts', 'current'], []);
+      }
+
+      function canReadAssignment() {
+        return isAuthed() && (myData() || hasAdminPermission('assignments', 'read', getTargetSites()));
+      }
+
+      allow list: if isAuthed();
+      allow read: if isAuthed() && canReadAssignment();
+    }
+
+    // ============ GUESTS ============
+    match /guests/{guestUid} {
+      function canWriteGuests() {
+        return isAuthed() && (getUid() == guestUid);
+      }
+
+      allow read: if canWriteGuests();
+      allow create: if canWriteGuests();
+      allow update: if canWriteGuests();
+
+      match /runs/{runId} {
+        allow create: if canWriteGuests();
+        allow update: if canWriteGuests();
+          
+        match /trials/{trialId} {
+          allow create: if canWriteGuests();
+          allow update: if canWriteGuests();
+        }
+      }
+    }
+
+    // ============ ADMINISTRATIONS ============
+    match /administrations/{administrationId} {
+      function getAdminDocCreatorId() {
+        return get(/databases/$(database)/documents/administrations/$(administrationId)).data.createdBy
+      }
+
+      function myData() { return getUid() == getAdminDocCreatorId(); }
+
+      function canReadAdministration() {
+        return hasAdminPermission('assignments', 'read', [resource.data.siteId]);
+      }
+      allow read: if isAuthed() && (myData() || canReadAdministration());
+
+      match /stats/{document=**} {
+        function getAssignmentSiteId() {
+          return get(/databases/$(database)/documents/administrations/$(administrationId)).data.siteId
+        }
+
+        allow read: if isAuthed() && (myData() || hasAdminPermission('assignments', 'read', [getAssignmentSiteId()]));
+      }
+    }
+
+    // ============ GROUPS ============
+    // Districts (Sites)
+    match /districts/{districtId} {
+      function participantHasSite() {
+        let siteRoles = request.auth.token
+          .get('siteRoles', {})
+          .get(districtId, []);
+
+        return siteRoles.hasAny([districtId]);
+      }
+
+      function canReadDistrict() {
+        // districtId is the siteId
+        return hasSiteGroupPermissionForSiteIds([districtId], 'sites', 'read') || participantHasSite();
+      }
+
+      // Allowing list is necessary for multiple document queries. 
+      allow list: if isAuthed() && ((getHighestRole() != 'participant') || participantHasSite());
+      allow read: if isAuthed() && canReadDistrict();
+    }
+
+    // Schools
+    match /schools/{schoolId} {
+      function canReadSchool() {
+        let siteId = resource.data.get('districtId', 'nullId'); // parent site
+        return hasSiteGroupPermissionForSiteIds([siteId], 'schools', 'read');
+      }
+      allow list: if isAuthed() && (getHighestRole() != 'participant')
+      allow read: if isAuthed() && canReadSchool();
+    }
+
+    // Classes
+    match /classes/{classId} {
+      function userDoc() {
+  			return get(/databases/$(database)/documents/users/$(getUid()));
+			} 
+      
+      function userCurrentClassIds() {
+        return userDoc().data.get(['classes', 'current'], []);
+      }
+
+      function isClassInUsersCurrentClasses(classId) {
+        return userCurrentClassIds().hasAny([classId]);
+      }
+    
+    
+      function canReadClass() {
+        let siteId   = resource.data.get('districtId', 'nullId');
+        return hasSiteGroupPermissionForSiteIds([siteId], 'classes', 'read') || isClassInUsersCurrentClasses(classId);
+      }
+      allow list: if isAuthed() && (getHighestRole() != 'participant')
+      allow read: if isAuthed() && canReadClass();
+    }
+
+    // Cohorts
+    match /groups/{groupId} {
+      function canReadGroup() {
+        // parentOrgId for groups should be the parent site (district)
+        let siteId = resource.data.get('parentOrgId', 'nullId');
+        return hasSiteGroupPermissionForSiteIds([siteId], 'cohorts', 'read');
+      }
+      allow list: if isAuthed() && (getHighestRole() != 'participant')
+      allow read: if isAuthed() && canReadGroup();
+    }
+
+    // ============ TASKS ============
+    match /tasks/{taskId} {
+      function canUpdateTask() {
+        let newParams = request.resource.data.get("params", {});
+        let oldParams = resource.data.get("params", {});
+        return isAuthed()
+          && keysNotUpdated(['registered'])
+          && onlyTheseKeysUpdated(['description', 'lastUpdated', 'params', "createdAt", "updatedAt"])
+          && newParams.diff(oldParams).addedKeys().size() == 0
+          && newParams.diff(oldParams).removedKeys().size() == 0;
+      }
+
+      function canCreateTask() {
+        let baseCheck = isAuthed() && !request.resource.data.keys().hasAny(['registered']);
+        return baseCheck && hasPermission('tasks', 'create');
+      }
+
+      function canUpdateTaskWithPermission() {
+        return true;
+      }
+
+      allow read:   if isAuthed();
+      allow create: if isAuthed() && canCreateTask();
+      allow update: if isAuthed() && canUpdateTaskWithPermission();
+
+      match /variants/{variantId} {
+        allow read:   if isAuthed();
+        allow create: if isAuthed() && canCreateTask();
+        allow update: if isAuthed() && canUpdateTaskWithPermission();
+      }
+    }
+
+        // Collection-group queries are evaluated at the top level and cannot be nested under their parent documents
+    match /{parentPath=**}/variants/{variantId} {
+      function canReadTask() {
+        return isAuthed() && hasPermission('tasks', 'read');
+      }
+
+      allow list: if isAuthed() && canReadTask();
+      allow read: if isAuthed() && canReadTask();
+    }
+  }
+}

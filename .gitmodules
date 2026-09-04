@@ -1,0 +1,8 @@
+[submodule "core-tasks"]
+	path = core-tasks
+	url = https://github.com/levante-framework/core-tasks.git
+	branch = spike/offline-assetbase
+[submodule "functions-repo"]
+	path = functions-repo
+	url = https://github.com/levante-framework/levante-firebase-functions.git
+	branch = spike/sync-offline-runs
