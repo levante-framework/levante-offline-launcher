@@ -49,10 +49,12 @@ shell/             the launcher: Vue 3 + Vite + vite-plugin-pwa (injectManifest)
   src/views/       Provision, Roster, Task, Sync, Lock
   test/            offline-run.mjs — Playwright proof (provision → offline → play → sync),
                    --browser webkit for the WebKit engine
-emulator/          firebase.json + seed.mjs (permissions matrix, site, proctor, children,
-                   administration, assignments) + inspect.mjs (what landed after a sync)
-pack-builder/      build-pack.mjs — CLI mirror of the bucket (measurement / pre-baked kits);
-                   the launcher no longer needs it
+emulator/          firebase.json + seed.mjs (permissions matrix, site, school, cohort, proctors,
+                   children, administration, assignments) + inspect.mjs (what landed after a
+                   sync) + serve-bundles.mjs (static bundle server with CORS + HTTP Range)
+pack-builder/      build-bundles.mjs — content-addressed asset bundles (one index + one blob
+                   per task×locale and per shared×locale) from the public bucket; what the
+                   launcher downloads. build-pack.mjs — the older per-file mirror (measurement)
 ```
 
 ## Quick start
@@ -73,6 +75,10 @@ cd ../../functions-repo/functions/levante-admin && npm install && npm run build
 # 3. emulator (terminal A) + seed
 cd ../../../emulator && npm install && npm start
 cd emulator && npm run seed                      # terminal B
+
+# 3b. asset bundles for the seeded tasks (once; ~4 s from the public bucket) + a server for them
+cd ../pack-builder && node build-bundles.mjs --tasks hearts-and-flowers,egma-math,matrix-reasoning --locale en-US --out ./bundles --cache ./cache
+cd ../emulator && npm run bundles               # terminal C — http://127.0.0.1:4175 (VITE_BUNDLE_BASE)
 
 # 4. the launcher against the emulator
 cd ../shell && npm install --ignore-scripts && npx playwright install chromium webkit
@@ -112,6 +118,17 @@ service workers; use a real browser.
   custom-scheme origin like `capacitor://localhost` ("Request url is not HTTP/HTTPS"), and
   because files in the app container are outside browser storage-eviction heuristics anyway.
   Either way core-tasks' `assetBaseUrl` needs no network.
+- **Packs are assembled from content-addressed bundles.** `pack-builder/build-bundles.mjs`
+  turns the bucket into one index (`entries: [{name, contentType, offset, length, sha256}]`)
+  plus one uncompressed blob per unit — `task/<id>/<locale>` and `shared/<locale>` — and a
+  `catalog.json`; `bundleId` is a hash of the entries, so identical content has one id and
+  every run carries the id of the bundle it was played from (`offline.bundleId`). The
+  launcher streams each blob, slices it into per-file objects for the storage backend,
+  verifies every SHA-256, and resumes an interrupted download by HTTP Range from the first
+  entry it does not hold. Building is also where a battery gets validated: missing audio,
+  corpora or translations are warnings in the index (`--strict` fails the build). Without
+  `VITE_BUNDLE_BASE` the launcher falls back to listing the bucket folders and fetching
+  ~1,800 objects, which is what made WebKit take minutes.
 - **Sealed at rest.** A proctor PIN (PBKDF2, 310k iterations) derives an AES-GCM key.
   Runs, trials and the roster are stored as small plaintext envelopes (ids, indexes, counts)
   plus one sealed box; the key lives in `sessionStorage` after unlock so the reload
@@ -145,9 +162,14 @@ service workers; use a real browser.
 ## Known gaps
 
 - Clock offset is measured per request; a sync session should measure once with RTT/2.
-- The pack downloader keeps the whole folder listing in memory and puts synthetic
-  `Response`s; large batteries (ToM's 127 MB) will want a streaming put and a size check
-  against `navigator.storage.estimate()`.
+- Bundles are per task, so audio prompts shared by several tasks are downloaded once per
+  task that uses them (65 of 1,892 entries, 3.3 MB, for the three-task pack); the storage
+  layer dedupes them. Moving multi-task audio into the shared unit would remove that.
+- Bundle downloads set a `Range` header on resume, which preflights; the production bucket's
+  CORS config must allow it (`responseHeader: [Range, …]`). The Capacitor path goes through
+  native HTTP, which buffers the whole blob (no body stream) — fine at 20 MB, to be
+  revisited for ToM-sized bundles (127 MB of unoptimized PNGs today).
+- No size check against `navigator.storage.estimate()` before a download yet.
 - `window.__levanteStore` exposes the decrypting store for tests; strip for production.
 - The export JSON is plaintext by design (courier fallback); protect it operationally.
 - The auto-player in the e2e is a test driver, not a validity claim about responses.

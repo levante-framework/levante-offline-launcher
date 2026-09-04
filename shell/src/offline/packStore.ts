@@ -1,17 +1,25 @@
-import { corpusFor, translationTaskFor } from './corpusDefaults';
+import { corpusFor, DEFAULT_CORPUS, translationTaskFor } from './corpusDefaults';
 import { deletePackRecord, getPack, listPacks, putPack, updatePack } from './db';
 import { packStorage } from './storage';
 import type { PackRecord } from './types';
 
-// Downloads an administration's asset pack from the public bucket into local storage, laid
-// out exactly as core-tasks expects behind `assetBaseUrl` (see assetBase.ts on the
-// levante-in-a-box branch): objects at <base>/<bucket object name> and the GCS listing
-// responses replaced by <base>/manifests/<folder>.json. Where "local storage" is (Cache
-// Storage served by the service worker, or the app filesystem) is the storage backend's
-// business — see storage.ts.
+// Downloads an administration's asset pack into local storage, laid out exactly as
+// core-tasks expects behind `assetBaseUrl` (see assetBase.ts on the levante-in-a-box
+// branch): objects at <base>/<bucket object name> and the GCS listing responses replaced
+// by <base>/manifests/<folder>.json. Where "local storage" is (Cache Storage served by the
+// service worker, or the app filesystem) is the storage backend's business — see storage.ts.
+//
+// Two sources:
+//   - bundles (VITE_BUNDLE_BASE set): one content-addressed index + blob per unit
+//     (`shared/<locale>`, `task/<id>/<locale>`), built by pack-builder/build-bundles.mjs.
+//     Streamed and sliced into per-file entries; resumable by HTTP Range from the first
+//     entry not yet stored; every entry's SHA-256 verified.
+//   - listing (fallback): enumerate the bucket folders through the GCS JSON API and fetch
+//     every object — the original path, ~1,800 requests for three tasks.
 
 const GCS = 'https://storage.googleapis.com';
 const BUCKET = (import.meta.env.VITE_ASSET_BUCKET as string | undefined) || 'levante-assets-prod';
+const BUNDLE_BASE = ((import.meta.env.VITE_BUNDLE_BASE as string | undefined) || '').replace(/\/+$/, '');
 const CONCURRENCY = 6;
 const ACTIVE_KEY = 'levante-offline:active-pack';
 
@@ -21,6 +29,32 @@ interface GcsItem {
   size?: string;
 }
 
+interface BundleEntry {
+  name: string;
+  contentType: string;
+  offset: number;
+  length: number;
+  sha256: string;
+}
+
+interface BundleIndex {
+  format: string;
+  unit: string;
+  bundleId: string;
+  builtAt: string;
+  bytes: number;
+  files: number;
+  corpora?: Record<string, { corpus: string; sha256: string }>;
+  warnings?: string[];
+  entries: BundleEntry[];
+}
+
+interface BundleCatalog {
+  builtAt: string;
+  bucket: string;
+  units: Record<string, { bundleId: string; bytes: number; files: number }>;
+}
+
 export interface DownloadProgress {
   filesDone: number;
   fileCount: number;
@@ -28,7 +62,15 @@ export interface DownloadProgress {
   current: string;
 }
 
+interface Session {
+  id: string;
+  progress: DownloadProgress;
+  report: () => void;
+}
+
 export { PACK_CACHE } from './storage';
+
+export const usesBundles = BUNDLE_BASE !== '';
 
 export function assetBaseFor(packId: string) {
   return packStorage.assetBase(packId);
@@ -60,12 +102,192 @@ export async function downloadPack(pack: PackRecord, onProgress?: (p: DownloadPr
   } catch {
     /* best effort */
   }
-  const id = pack.packId;
   const progress: DownloadProgress = { filesDone: 0, fileCount: 0, bytes: 0, current: '' };
-  const report = () => onProgress?.({ ...progress });
+  const session: Session = { id: pack.packId, progress, report: () => onProgress?.({ ...progress }) };
 
   await putPack({ ...pack, status: 'downloading', error: null });
+  const built = usesBundles ? await downloadFromBundles(pack, session) : await downloadFromListing(pack, session);
 
+  const done: Partial<PackRecord> = {
+    status: 'ready',
+    error: null,
+    filesDone: progress.filesDone,
+    fileCount: progress.fileCount,
+    totalBytes: progress.bytes,
+    ...built,
+  };
+  await updatePack(pack.packId, done);
+  setActivePackId(pack.packId);
+  return { ...pack, ...done } as PackRecord;
+}
+
+export async function markPackError(packId: string, error: unknown) {
+  await updatePack(packId, { status: 'error', error: error instanceof Error ? error.message : String(error) });
+}
+
+export async function deletePack(packId: string) {
+  await packStorage.deletePack(packId);
+  await deletePackRecord(packId);
+  if (getActivePackId() === packId) setActivePackId(null);
+}
+
+// ---------- bundles ----------
+
+async function downloadFromBundles(pack: PackRecord, { id, progress, report }: Session): Promise<Partial<PackRecord>> {
+  progress.current = 'bundle catalog…';
+  report();
+  const catalog = (await fetchJson(`${BUNDLE_BASE}/catalog.json`)) as BundleCatalog;
+  const units = [`shared/${pack.locale}`, ...pack.tasks.map((t) => `task/${t.taskId}/${pack.locale}`)];
+  const indexes: BundleIndex[] = [];
+  for (const unit of units) {
+    const summary = catalog.units[unit];
+    if (!summary) throw new Error(`No bundle for ${unit} in ${BUNDLE_BASE}/catalog.json — build it with pack-builder/build-bundles.mjs`);
+    indexes.push((await fetchJson(`${BUNDLE_BASE}/${unit}/${summary.bundleId}.json`)) as BundleIndex);
+  }
+
+  // Variants can ask for a corpus other than the bundled default; those are fetched singly.
+  const extraCorpora: Array<{ taskId: string; corpus: string }> = [];
+  for (const task of pack.tasks) {
+    const corpus = corpusFor(task.taskId, task.variantParams);
+    if (corpus && corpus !== DEFAULT_CORPUS[task.taskId]) extraCorpora.push({ taskId: task.taskId, corpus });
+  }
+  progress.fileCount = indexes.reduce((n, ix) => n + ix.entries.length, 0) + extraCorpora.length;
+  await updatePack(id, { fileCount: progress.fileCount });
+  report();
+
+  const bundles: NonNullable<PackRecord['bundles']> = {};
+  const corpora: PackRecord['corpora'] = {};
+  for (const index of indexes) {
+    await downloadBundle(id, `${BUNDLE_BASE}/${index.unit}/${index.bundleId}.bin`, index, progress, report);
+    bundles[index.unit] = { bundleId: index.bundleId, bytes: index.bytes, files: index.entries.length };
+    Object.assign(corpora, index.corpora ?? {});
+  }
+  for (const { taskId, corpus } of extraCorpora) {
+    const rel = `corpus/${taskId}/${corpus}.csv`;
+    progress.current = rel;
+    const stored = await storeObject(id, rel);
+    progress.bytes += stored.bytes;
+    progress.filesDone++;
+    const buf = stored.buf ?? (await packStorage.readBytes(id, rel));
+    corpora[taskId] = { corpus, sha256: buf ? await sha256Hex(new Uint8Array(buf)) : '' };
+    report();
+  }
+
+  // The folder listings core-tasks asks for, from the union of every bundle's entries.
+  const byFolder = new Map<string, Array<{ name: string; contentType: string }>>();
+  for (const index of indexes) {
+    for (const e of index.entries) {
+      const parts = e.name.split('/');
+      if (parts.length < 3) continue;
+      const folder = parts.slice(0, 2).join('/');
+      let items = byFolder.get(folder);
+      if (!items) byFolder.set(folder, (items = []));
+      items.push({ name: e.name, contentType: e.contentType });
+    }
+  }
+  for (const [folder, items] of byFolder) await packStorage.putJson(id, `manifests/${folder}.json`, { items });
+
+  return { corpora, bundles };
+}
+
+// Streams one bundle blob and stores each entry as its own object. Entries already present
+// are skipped; the request starts at the first missing entry's offset (HTTP Range), so an
+// interrupted download resumes where it stopped.
+async function downloadBundle(packId: string, url: string, index: BundleIndex, progress: DownloadProgress, report: () => void) {
+  const entries = [...index.entries].sort((a, b) => a.offset - b.offset);
+  const missing: boolean[] = [];
+  for (const e of entries) missing.push(!(await packStorage.has(packId, e.name)));
+  const first = missing.indexOf(true);
+  if (first < 0) {
+    progress.filesDone += entries.length;
+    report();
+    return;
+  }
+  progress.filesDone += first;
+  const start = entries[first].offset;
+  const res = await fetchWithRetry(url, 4, start > 0 ? { Range: `bytes=${start}-` } : undefined);
+  const reader = new ByteReader(res);
+  // A server that ignores Range answers 200 from byte 0.
+  if (res.status !== 206) await reader.take(start);
+
+  for (let k = first; k < entries.length; k++) {
+    const e = entries[k];
+    const bytes = await reader.take(e.length);
+    if (missing[k]) {
+      const digest = await sha256Hex(bytes);
+      if (digest !== e.sha256) throw new Error(`checksum mismatch for ${e.name} in ${index.unit}/${index.bundleId}`);
+      await packStorage.putBytes(packId, e.name, bytes.buffer, e.contentType);
+      progress.bytes += e.length;
+    }
+    progress.filesDone++;
+    progress.current = e.name;
+    if (progress.filesDone % 25 === 0) {
+      await updatePack(packId, { filesDone: progress.filesDone, totalBytes: progress.bytes });
+      report();
+    }
+  }
+  await reader.close();
+  report();
+}
+
+// Sequential byte reader over a Response: streams `body` when the platform exposes it and
+// falls back to the whole array buffer (CapacitorHttp's patched fetch has no body stream).
+class ByteReader {
+  private chunks: Uint8Array[] = [];
+  private reader: ReadableStreamDefaultReader<Uint8Array> | null;
+  private whole: Promise<ArrayBuffer> | null = null;
+  private wholeTaken = false;
+
+  constructor(private readonly res: Response) {
+    this.reader = res.body?.getReader() ?? null;
+  }
+
+  async take(n: number): Promise<Uint8Array<ArrayBuffer>> {
+    const out = new Uint8Array(new ArrayBuffer(n));
+    let filled = 0;
+    while (filled < n) {
+      if (this.chunks.length === 0 && !(await this.fill())) throw new Error(`bundle ended after ${filled} of ${n} bytes`);
+      const chunk = this.chunks[0];
+      const need = n - filled;
+      if (chunk.length <= need) {
+        out.set(chunk, filled);
+        filled += chunk.length;
+        this.chunks.shift();
+      } else {
+        out.set(chunk.subarray(0, need), filled);
+        filled += need;
+        this.chunks[0] = chunk.subarray(need);
+      }
+    }
+    return out;
+  }
+
+  private async fill(): Promise<boolean> {
+    if (this.reader) {
+      const { value, done } = await this.reader.read();
+      if (done || !value) return false;
+      this.chunks.push(value);
+      return true;
+    }
+    if (this.wholeTaken) return false;
+    this.wholeTaken = true;
+    this.whole ??= this.res.arrayBuffer();
+    this.chunks.push(new Uint8Array(await this.whole));
+    return true;
+  }
+
+  async close() {
+    try {
+      await this.reader?.cancel();
+    } catch {
+      /* stream already finished */
+    }
+  }
+}
+
+// ---------- listing (legacy path) ----------
+
+async function downloadFromListing(pack: PackRecord, { id, progress, report }: Session): Promise<Partial<PackRecord>> {
   // 1. Which audio files these tasks need.
   const apt = (await fetchJson(`${GCS}/${BUCKET}/audio/assets-per-task.json`)) as Record<string, { audio: string[] }>;
   await packStorage.putJson(id, 'audio/assets-per-task.json', apt);
@@ -126,32 +348,11 @@ export async function downloadPack(pack: PackRecord, onProgress?: (p: DownloadPr
     const corpusTask = Object.keys(corpora).find((t) => rel.startsWith(`corpus/${t}/`));
     if (corpusTask) {
       const buf = stored.buf ?? (await packStorage.readBytes(id, rel));
-      corpora[corpusTask].sha256 = buf ? await sha256(buf) : '';
+      corpora[corpusTask].sha256 = buf ? await sha256Hex(new Uint8Array(buf)) : '';
     }
     report();
   }
-
-  const done: Partial<PackRecord> = {
-    status: 'ready',
-    error: null,
-    filesDone: progress.filesDone,
-    fileCount: progress.fileCount,
-    totalBytes: progress.bytes,
-    corpora,
-  };
-  await updatePack(id, done);
-  setActivePackId(id);
-  return { ...pack, ...done } as PackRecord;
-}
-
-export async function markPackError(packId: string, error: unknown) {
-  await updatePack(packId, { status: 'error', error: error instanceof Error ? error.message : String(error) });
-}
-
-export async function deletePack(packId: string) {
-  await packStorage.deletePack(packId);
-  await deletePackRecord(packId);
-  if (getActivePackId() === packId) setActivePackId(null);
+  return { corpora };
 }
 
 // ---------- helpers ----------
@@ -186,11 +387,11 @@ async function fetchJson(url: string) {
   return (await fetchWithRetry(url)).json();
 }
 
-async function fetchWithRetry(url: string, tries = 4): Promise<Response> {
+async function fetchWithRetry(url: string, tries = 4, headers?: Record<string, string>): Promise<Response> {
   let lastErr: unknown;
   for (let i = 0; i < tries; i++) {
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, headers ? { headers } : undefined);
       if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
       return res;
     } catch (err) {
@@ -210,8 +411,8 @@ async function runPool<T>(items: T[], size: number, fn: (item: T) => Promise<voi
   await Promise.all(workers);
 }
 
-async function sha256(buf: ArrayBuffer) {
-  const digest = await crypto.subtle.digest('SHA-256', buf);
+async function sha256Hex(bytes: Uint8Array<ArrayBuffer>) {
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 

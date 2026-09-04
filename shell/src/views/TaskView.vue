@@ -58,6 +58,7 @@ onMounted(async () => {
       variantParams,
       administrationId: pack.administrationId,
       corpusSha256: pack.corpora[props.taskId]?.sha256 ?? null,
+      bundleId: pack.bundles?.[`task/${props.taskId}/${pack.locale}`]?.bundleId ?? null,
       child,
     });
 

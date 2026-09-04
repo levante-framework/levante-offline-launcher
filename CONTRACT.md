@@ -31,7 +31,7 @@ Paths and ids:
 | `aborted` | — | boolean | **new field** |
 | `stopReason` | string | string | none |
 | `scores.raw.composite.{practice,test}` | maintained per trial by firekit | computed at ingest (`numAttempted/numCorrect/numIncorrect`, last `thetaEstimate`/`thetaSE`) | same shape |
-| `offline` (map) | — | `{ source, packId, packBuiltAt, deviceId, appBuild, corpusSha256, clockOffsetMs, deviceTimeStarted, deviceTimeFinished, trialCount, orphan, syncedAt, syncedBy }` | **new map**; `syncedAt` is the only server-time field for the run |
+| `offline` (map) | — | `{ source, packId, packBuiltAt, deviceId, appBuild, corpusSha256, bundleId, clockOffsetMs, deviceTimeStarted, deviceTimeFinished, trialCount, orphan, syncedAt, syncedBy }` | **new map**; `syncedAt` is the only server-time field for the run; `bundleId` = content hash of the task×locale asset bundle the run was played from (null for listing-built packs) — the version stamp for stimuli/corpus/translations |
 | `assigningOrgs`, `readOrgs` | copied from the assignment at `startRun` | copied from the assignment at sync; `null` + `offline.orphan=true` if the assignment is missing | same field, new failure mode (orphan runs are flagged, never dropped) |
 | `userData.birthMonth/birthYear/assessmentPid/variantId` | from the user doc | from the pack roster (= the user doc at provisioning time) | none |
 

@@ -15,7 +15,7 @@ for (const user of users.docs) {
     const trials = await run.ref.collection('trials').count().get();
     console.log(
       `  run ${run.id.slice(0, 8)}… task=${d.taskId} completed=${d.completed} trials=${trials.data().count}` +
-        ` started=${d.timeStarted?.toDate?.().toISOString()} offset=${d.offline?.clockOffsetMs}ms bestRun=${d.bestRun ?? '-'}` +
+        ` started=${d.timeStarted?.toDate?.().toISOString()} offset=${d.offline?.clockOffsetMs}ms bundle=${d.offline?.bundleId?.slice(0, 8) ?? '-'} bestRun=${d.bestRun ?? '-'}` +
         ` scores.test=${JSON.stringify(d.scores?.raw?.composite?.test ?? null)}`,
     );
   }

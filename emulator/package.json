@@ -5,7 +5,8 @@
   "scripts": {
     "start": "PATH=/opt/homebrew/opt/openjdk/bin:$PATH firebase emulators:start --only auth,firestore,functions --project demo-levante-spike",
     "seed": "node seed.mjs",
-    "inspect": "node inspect.mjs"
+    "inspect": "node inspect.mjs",
+    "bundles": "node serve-bundles.mjs ../pack-builder/bundles"
   },
   "dependencies": {
     "@levante-framework/permissions-core": "^1.2.1",

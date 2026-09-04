@@ -19,6 +19,7 @@ export interface OfflineAppkitInput {
   variantParams: Record<string, unknown>;
   administrationId: string | null;
   corpusSha256: string | null;
+  bundleId: string | null;
   child: RosterEntry;
 }
 

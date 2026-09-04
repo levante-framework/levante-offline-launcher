@@ -19,3 +19,7 @@ shell/ios/App/App/capacitor.config.json
 shell/test/out/
 emulator/firestore-debug.log
 emulator/ui-debug.log
+
+# Content-addressed bundles + the builder's object cache; rebuild with pack-builder/build-bundles.mjs
+pack-builder/bundles/
+pack-builder/cache/

@@ -4,6 +4,29 @@ Environment: macOS, Node 22, Playwright (Chromium 151 / WebKit 26.5), Firebase e
 (auth + firestore + functions) running the real `levante-admin` functions codebase plus the
 two new callables. core-tasks 1.3.17 + the `levante-in-a-box` asset commit.
 
+## Content-addressed bundles — 2026-09-04
+
+`pack-builder/build-bundles.mjs` built the three-task battery from the public bucket in
+**4 s**: `shared/en-US` 40 files / 1.7 MB, `task/hearts-and-flowers/en-US` 106 / 2.5 MB,
+`task/egma-math/en-US` 200 / 10.3 MB, `task/matrix-reasoning/en-US` 1,546 / 5.6 MB; no
+missing audio/corpus/translation warnings. Served locally with CORS + Range
+(`emulator/serve-bundles.mjs`); the launcher streams each blob, slices, verifies SHA-256 per
+entry and writes per-file objects into the same storage backend as before.
+
+Provisioning time for the same pack (1,817 objects, 16.8 MB stored), same machine, same e2e:
+
+| Engine | Listing path (per-object fetch) | Bundles (4 requests) |
+|---|---|---|
+| Chromium 151 (headless) | 6 s | **2 s** |
+| WebKit 26.5 (Playwright, headless) | 47 s | **1 s** |
+| Safari on iPad Air simulator (by hand, earlier) | ≈2 min | not re-measured |
+
+Both bundle runs then completed the full loop (offline roster, hearts-and-flowers, 113–115
+requests with 0 failures, sealed rows, sync); the synced run documents carry
+`offline.bundleId = cd93cf09…` (the hearts-and-flowers bundle), which is now the stimulus /
+corpus / translation version stamp. Duplicated entries across bundles (audio prompts used by
+more than one task): 65 of 1,892, 3.3 MB, deduped by the storage layer.
+
 ## Scoped provisioning as a research assistant — 2026-09-04 (Chromium)
 
 Seed: site `site-demo` with school "Sunrise Primary" (Ada, Blaise) and cohort "Pilot cohort A"

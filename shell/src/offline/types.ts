@@ -55,6 +55,8 @@ export interface PackRecord {
   filesDone: number;
   totalBytes: number;
   corpora: Record<string, { corpus: string; sha256: string }>;
+  /** Content-addressed bundles the pack was assembled from, by unit (`task/<id>/<locale>`, `shared/<locale>`). */
+  bundles?: Record<string, { bundleId: string; bytes: number; files: number }>;
 }
 
 export type SyncState = 'pending' | 'synced' | 'error';
@@ -71,6 +73,8 @@ export interface OfflineRunRecord {
   variantParams: Record<string, unknown>;
   administrationId: string | null;
   corpusSha256: string | null;
+  /** Content id of the task's asset bundle (null when the pack came from a folder listing). */
+  bundleId: string | null;
   child: {
     localId: string;
     uid: string | null;
