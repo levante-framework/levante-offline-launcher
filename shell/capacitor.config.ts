@@ -13,6 +13,12 @@ const config: CapacitorConfig = {
     // pack serving depend on one.
     limitsNavigationsToAppBoundDomains: true,
   },
+  plugins: {
+    // Route fetch/XHR through the native HTTP stack: the WebView origin is a custom scheme
+    // (capacitor://localhost) that cross-origin servers such as the asset bucket reject
+    // under CORS, and native requests are not subject to it.
+    CapacitorHttp: { enabled: true },
+  },
 };
 
 export default config;

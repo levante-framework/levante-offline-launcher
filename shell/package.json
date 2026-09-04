@@ -14,6 +14,7 @@
   "dependencies": {
     "@capacitor/android": "^8.5.1",
     "@capacitor/core": "^8.5.1",
+    "@capacitor/filesystem": "^8.1.3",
     "@capacitor/ios": "^8.5.1",
     "@levante-framework/core-tasks": "file:../core-tasks/task-launcher",
     "idb": "^8.0.0",

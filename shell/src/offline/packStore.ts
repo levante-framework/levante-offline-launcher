@@ -1,16 +1,17 @@
 import { corpusFor, translationTaskFor } from './corpusDefaults';
 import { deletePackRecord, getPack, listPacks, putPack, updatePack } from './db';
+import { packStorage } from './storage';
 import type { PackRecord } from './types';
 
-// Downloads an administration's asset pack from the public bucket into Cache Storage,
-// laid out exactly as core-tasks expects behind `assetBaseUrl` (see assetBase.ts on the
-// levante-in-a-box branch): objects at /pack/<packId>/<bucket object name> and the GCS
-// listing responses replaced by /pack/<packId>/manifests/<folder>.json. The service
-// worker (src/sw.ts) serves this cache, so a provisioned device needs no network at all.
+// Downloads an administration's asset pack from the public bucket into local storage, laid
+// out exactly as core-tasks expects behind `assetBaseUrl` (see assetBase.ts on the
+// levante-in-a-box branch): objects at <base>/<bucket object name> and the GCS listing
+// responses replaced by <base>/manifests/<folder>.json. Where "local storage" is (Cache
+// Storage served by the service worker, or the app filesystem) is the storage backend's
+// business — see storage.ts.
 
 const GCS = 'https://storage.googleapis.com';
 const BUCKET = (import.meta.env.VITE_ASSET_BUCKET as string | undefined) || 'levante-assets-prod';
-export const PACK_CACHE = 'levante-packs';
 const CONCURRENCY = 6;
 const ACTIVE_KEY = 'levante-offline:active-pack';
 
@@ -27,8 +28,10 @@ export interface DownloadProgress {
   current: string;
 }
 
-export function packBase(packId: string) {
-  return `/pack/${encodeURIComponent(packId)}`;
+export { PACK_CACHE } from './storage';
+
+export function assetBaseFor(packId: string) {
+  return packStorage.assetBase(packId);
 }
 
 export function getActivePackId(): string | null {
@@ -57,8 +60,7 @@ export async function downloadPack(pack: PackRecord, onProgress?: (p: DownloadPr
   } catch {
     /* best effort */
   }
-  const base = packBase(pack.packId);
-  const cache = await caches.open(PACK_CACHE);
+  const id = pack.packId;
   const progress: DownloadProgress = { filesDone: 0, fileCount: 0, bytes: 0, current: '' };
   const report = () => onProgress?.({ ...progress });
 
@@ -66,7 +68,7 @@ export async function downloadPack(pack: PackRecord, onProgress?: (p: DownloadPr
 
   // 1. Which audio files these tasks need.
   const apt = (await fetchJson(`${GCS}/${BUCKET}/audio/assets-per-task.json`)) as Record<string, { audio: string[] }>;
-  await putJson(cache, `${base}/audio/assets-per-task.json`, apt);
+  await packStorage.putJson(id, 'audio/assets-per-task.json', apt);
   const audioNames = new Set<string>();
   for (const task of pack.tasks) {
     for (const name of apt[task.taskId]?.audio ?? []) audioNames.add(name);
@@ -94,22 +96,22 @@ export async function downloadPack(pack: PackRecord, onProgress?: (p: DownloadPr
   extras.push(`translations/itembank/general/${pack.locale}/item-bank-translations.json`);
 
   progress.fileCount = folders.reduce((n, f) => n + f.items.length, 0) + extras.length;
-  await updatePack(pack.packId, { fileCount: progress.fileCount });
+  await updatePack(id, { fileCount: progress.fileCount });
   report();
 
   // 3. Manifests + objects.
   for (const { folder, items } of folders) {
-    await putJson(cache, `${base}/manifests/${folder}.json`, {
+    await packStorage.putJson(id, `manifests/${folder}.json`, {
       items: items.map(({ name, contentType }) => ({ name, contentType })),
     });
     await runPool(items, CONCURRENCY, async (item) => {
       progress.current = item.name;
       // Await first, then add: `x += await f()` reads x before the await and races other workers.
-      const bytes = await cacheObject(cache, `${base}/${item.name}`, item.name);
-      progress.bytes += bytes;
+      const stored = await storeObject(id, item.name);
+      progress.bytes += stored.bytes;
       progress.filesDone++;
       if (progress.filesDone % 25 === 0) {
-        await updatePack(pack.packId, { filesDone: progress.filesDone, totalBytes: progress.bytes });
+        await updatePack(id, { filesDone: progress.filesDone, totalBytes: progress.bytes });
         report();
       }
     });
@@ -118,13 +120,13 @@ export async function downloadPack(pack: PackRecord, onProgress?: (p: DownloadPr
   // 4. Corpora + translations, hashing corpora for provenance.
   for (const rel of extras) {
     progress.current = rel;
-    const bytes = await cacheObject(cache, `${base}/${rel}`, rel);
-    progress.bytes += bytes;
+    const stored = await storeObject(id, rel);
+    progress.bytes += stored.bytes;
     progress.filesDone++;
     const corpusTask = Object.keys(corpora).find((t) => rel.startsWith(`corpus/${t}/`));
     if (corpusTask) {
-      const cached = await cache.match(`${base}/${rel}`);
-      corpora[corpusTask].sha256 = cached ? await sha256(await cached.arrayBuffer()) : '';
+      const buf = stored.buf ?? (await packStorage.readBytes(id, rel));
+      corpora[corpusTask].sha256 = buf ? await sha256(buf) : '';
     }
     report();
   }
@@ -137,8 +139,8 @@ export async function downloadPack(pack: PackRecord, onProgress?: (p: DownloadPr
     totalBytes: progress.bytes,
     corpora,
   };
-  await updatePack(pack.packId, done);
-  setActivePackId(pack.packId);
+  await updatePack(id, done);
+  setActivePackId(id);
   return { ...pack, ...done } as PackRecord;
 }
 
@@ -147,11 +149,7 @@ export async function markPackError(packId: string, error: unknown) {
 }
 
 export async function deletePack(packId: string) {
-  const cache = await caches.open(PACK_CACHE);
-  const prefix = `${location.origin}${packBase(packId)}/`;
-  for (const req of await cache.keys()) {
-    if (req.url.startsWith(prefix)) await cache.delete(req);
-  }
+  await packStorage.deletePack(packId);
   await deletePackRecord(packId);
   if (getActivePackId() === packId) setActivePackId(null);
 }
@@ -174,26 +172,14 @@ async function listPrefix(prefix: string): Promise<GcsItem[]> {
   return items;
 }
 
-// Resumable: an object already in the cache is not fetched again.
-async function cacheObject(cache: Cache, cacheUrl: string, objectName: string): Promise<number> {
-  if (await cache.match(cacheUrl)) return 0;
+// Resumable: an object already stored is not fetched again.
+async function storeObject(packId: string, objectName: string): Promise<{ bytes: number; buf: ArrayBuffer | null }> {
+  if (await packStorage.has(packId, objectName)) return { bytes: 0, buf: null };
   const url = `${GCS}/${BUCKET}/${objectName.split('/').map(encodeURIComponent).join('/')}`;
   const res = await fetchWithRetry(url);
   const buf = await res.arrayBuffer();
-  await cache.put(
-    cacheUrl,
-    new Response(buf, {
-      headers: {
-        'content-type': res.headers.get('content-type') ?? 'application/octet-stream',
-        'content-length': String(buf.byteLength),
-      },
-    }),
-  );
-  return buf.byteLength;
-}
-
-async function putJson(cache: Cache, cacheUrl: string, data: unknown) {
-  await cache.put(cacheUrl, new Response(JSON.stringify(data), { headers: { 'content-type': 'application/json' } }));
+  await packStorage.putBytes(packId, objectName, buf, res.headers.get('content-type') ?? 'application/octet-stream');
+  return { bytes: buf.byteLength, buf };
 }
 
 async function fetchJson(url: string) {
@@ -212,7 +198,8 @@ async function fetchWithRetry(url: string, tries = 4): Promise<Response> {
       await new Promise((r) => setTimeout(r, 400 * 2 ** i));
     }
   }
-  throw lastErr;
+  // WebKit's network errors are a bare "Load failed"; keep the URL so the failure is diagnosable.
+  throw new Error(`${lastErr instanceof Error ? lastErr.message : String(lastErr)} — ${url}`);
 }
 
 async function runPool<T>(items: T[], size: number, fn: (item: T) => Promise<void>) {

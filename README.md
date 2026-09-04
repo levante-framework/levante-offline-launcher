@@ -89,8 +89,13 @@ Claude browser pane blocks service workers; use a real browser.
 - **The pack is a cache of an administration.** `provisionOfflinePack` returns the tasks
   with the params *pinned on the administration* (the same snapshot `startTask` reads online)
   plus the roster; the device downloads stimuli, corpora and translations from the public
-  bucket into Cache Storage with resume, and records the corpus SHA-256. The service worker
-  serves `/pack/<packId>/…` so core-tasks' `assetBaseUrl` needs no network.
+  bucket with resume and records the corpus SHA-256. Where the pack lives is a storage
+  backend (`storage.ts`): in the browser, Cache Storage served by the service worker under
+  `/pack/<packId>/…`; in the Capacitor app, the app filesystem served through
+  `Capacitor.convertFileSrc` — because the Cache API refuses to store entries for a
+  custom-scheme origin like `capacitor://localhost` ("Request url is not HTTP/HTTPS"), and
+  because files in the app container are outside browser storage-eviction heuristics anyway.
+  Either way core-tasks' `assetBaseUrl` needs no network.
 - **Sealed at rest.** A proctor PIN (PBKDF2, 310k iterations) derives an AES-GCM key.
   Runs, trials and the roster are stored as small plaintext envelopes (ids, indexes, counts)
   plus one sealed box; the key lives in `sessionStorage` after unlock so the reload

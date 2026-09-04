@@ -10,6 +10,7 @@
 
     <div class="status-bar">
       <span>{{ online ? 'Network: online' : 'Network: offline' }}</span>
+      <span>{{ platform }}</span>
       <span>Pending runs: {{ pendingCount }}</span>
       <a href="#/sync">Sync &amp; export</a>
       <a href="#/provision">Provision</a>
@@ -63,6 +64,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { countRuns } from '../offline/db';
 import { getSelectedChildId, setSelectedChildId } from '../offline/device';
 import { loadPack } from '../offline/pack';
+import { platformLabel } from '../offline/storage';
 import type { PackRecord, RosterEntry } from '../offline/types';
 import { lock, vaultExists } from '../offline/vault';
 
@@ -71,6 +73,7 @@ const selectedId = ref<string | null>(getSelectedChildId());
 const pendingCount = ref(0);
 const error = ref('');
 const online = ref(navigator.onLine);
+const platform = platformLabel();
 
 const onOnline = () => (online.value = true);
 const onOffline = () => (online.value = false);

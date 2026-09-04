@@ -49,7 +49,41 @@ it, the physical equivalent of losing Wi‑Fi:
 | At rest | raw rows sealed; no plaintext leak |
 | Sync | 1 run synced (incomplete runs sync too, by design); clock offset 33 ms |
 
-Real Safari on an iPad remains untested: this machine has no Xcode or simulators.
+## iOS Safari — iPad Air 11" simulator, iOS 26.5 (Xcode 26.6), driven by hand
+
+| Step | Outcome |
+|---|---|
+| Vault + proctor sign-in | PIN vault created (WebCrypto); sign-in via the Auth emulator from Safari |
+| Provisioning | `getAdministrations` → `provisionOfflinePack` → **1,817 files / 16.8 MB into Cache Storage in ≈2 min** (WebKit pays per-request overhead on matrix-reasoning's 1,522 tiny files; ~20 files/s — a bundled pack format is the obvious optimization) |
+| App's web server killed, Safari reload | page served by the service worker; proctor session and pack (`READY`/`ACTIVE`) intact |
+| Roster | sealed roster decrypted with the session key, rendered from cache |
+| hearts-and-flowers | fullscreen gate, then the instruction screen (otter image, audio control) — every asset from the pack cache with no server |
+
+Screenshot: `shell/test/out/ios-safari-offline-task.png`. Not exercised in Safari: full playthrough and sync (the same code paths verified in Chromium/WebKit headless).
+
+## Capacitor iOS app — same simulator, Xcode 26.6 build
+
+First attempt (pack in Cache Storage, as in the PWA): the shell loaded under
+`capacitor://localhost`, the PIN vault and proctor sign-in worked, `provisionOfflinePack`
+returned the roster — and the first `cache.put` failed with **"Request url is not
+HTTP/HTTPS"**: the Cache Storage API refuses entries for a custom-scheme origin. This is
+the platform fact the native test was meant to surface, and it settles the native design:
+the pack goes on the **app filesystem** (`@capacitor/filesystem`, `Directory.Data`) and
+core-tasks gets `Capacitor.convertFileSrc(<pack dir>)` as `assetBaseUrl` — no service
+worker, and outside browser storage-eviction heuristics. `storage.ts` now switches
+backends by platform; the roster shows which one is active ("native ios · filesystem
+storage"). The PWA path was re-verified after the refactor (Chromium: 113 requests
+offline, 0 failed, 21 trials, sealed rows, synced; clock offset 48 ms).
+
+Second attempt (filesystem backend) failed on the first **folder listing**: WebKit logged
+`SubResourceLoader::didFail (type=2 …)` — an access-control failure — four times (the retry
+loop). Verified with curl: the GCS **JSON listing API** returns no
+`Access-Control-Allow-Origin` for `Origin: capacitor://localhost` (it echoes only http(s)
+origins), whereas the **object** endpoint answers `*` — which is why attempt 1 got past
+`assets-per-task.json` and attempt 2 did not. Fix: route the app's HTTP through Capacitor's
+native stack (`plugins.CapacitorHttp.enabled`), which is not subject to WebView CORS.
+
+Third attempt (filesystem backend + native HTTP): see below once run.
 
 ## Phase 1 (earlier the same day, static pack, no vault)
 

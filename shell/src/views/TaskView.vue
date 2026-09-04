@@ -15,7 +15,7 @@ import { version as coreTasksVersion } from '@levante-framework/core-tasks/packa
 import { getDeviceId, getSelectedChildId } from '../offline/device';
 import { OfflineAppkit } from '../offline/OfflineAppkit';
 import { loadPack } from '../offline/pack';
-import { packBase } from '../offline/packStore';
+import { assetBaseFor } from '../offline/packStore';
 
 const props = defineProps<{ taskId: string }>();
 const error = ref('');
@@ -43,7 +43,7 @@ onMounted(async () => {
     const variantParams: Record<string, unknown> = {
       language: pack.locale,
       taskName: props.taskId,
-      assetBaseUrl: packBase(pack.packId),
+      assetBaseUrl: await assetBaseFor(pack.packId),
       ...task.variantParams,
     };
 
