@@ -4,6 +4,23 @@ Environment: macOS, Node 22, Playwright (Chromium 151 / WebKit 26.5), Firebase e
 (auth + firestore + functions) running the real `levante-admin` functions codebase plus the
 two new callables. core-tasks 1.3.17 + the `levante-in-a-box` asset commit.
 
+## Scoped provisioning as a research assistant — 2026-09-04 (Chromium)
+
+Seed: site `site-demo` with school "Sunrise Primary" (Ada, Blaise) and cohort "Pilot cohort A"
+(Blaise, Carla); Blaise's assignment already has `egma-math` completed; proctors
+`proctor@levante.test` (`site_admin`) and `ra@levante.test` (`research_assistant`), both with
+new-style claims only (empty legacy `adminOrgs`).
+
+| Step | Outcome (proctor = `research_assistant`, scope = school) |
+|---|---|
+| `listOfflineScopes` | `[cohort Pilot cohort A, school Sunrise Primary]`; a child account gets `PERMISSION_DENIED`; a bogus org `NOT_FOUND`; `orgType: class` `INVALID_ARGUMENT` |
+| `provisionOfflinePack` (school) | **2 children** (Ada, Blaise — Carla excluded), pack id `admin-spike-offline-school-school-sunrise-en-US`, 1,817 files / 16.8 MB in 8 s; roster shows **Ada 0/3, Blaise 1/3 tasks done** from the assignment progress |
+| `provisionOfflinePack` (cohort, direct call) | Blaise + Carla, Blaise's `egma-math: completed` carried; no scope → all three |
+| Offline | roster from cache; hearts-and-flowers 13 trials; 113 requests, 0 failed; rows sealed |
+| Sync as the RA | **1 run synced, 0 failed** under the new gate (`assignments:read` + `users:read`); trigger: `progress.hearts_and_flowers = completed`, `bestRun`, `completedOn` |
+| `offlineDevices/dev_…` | `platform=web build=c5f9726-… site=site-demo pack=…-school-school-sunrise-en-US scope=school:Sunrise Primary children=2 provisioned=20:48:44Z lastSync=20:50:02Z runsSynced=1 trialsSynced=13` |
+| Second device, cohort scope, `site_admin`, child Blaise | pack `…-cohort-cohort-pilot-a-en-US` (Blaise, Carla) in 6 s; after his offline hearts-and-flowers run the roster — still offline — read **"Blaise P: 2/3 tasks done | Carla H: 0/3"** (one from the pack's progress, one from the device's own outbox); synced (offset 27 ms); trigger: both of Blaise's tasks `completed`; second `offlineDevices` row with its own counters |
+
 ## Phase 2 loop — 2026-09-04 (`shell/test/offline-run.mjs`, Chromium)
 
 | Step | Outcome |

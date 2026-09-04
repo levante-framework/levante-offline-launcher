@@ -8,7 +8,7 @@
 //   6. Reconnect and sync through the app's own Sync page.
 //
 //   node test/offline-run.mjs [--url http://127.0.0.1:4173] [--tasks hearts-and-flowers,egma-math]
-//                             [--child Ada] [--administration "Offline spike"] [--max-seconds 240]
+//                             [--child Ada] [--administration "Offline spike"] [--scope Sunrise|site] [--max-seconds 240]
 //                             [--proctor proctor@levante.test:proctor123]
 
 import { spawn } from 'node:child_process';
@@ -71,6 +71,8 @@ function waitForPort(port, timeoutMs) {
 }
 const CHILD = args.child || 'Ada';
 const ADMINISTRATION = args.administration || 'Offline spike';
+// The school/cohort the device is provisioned for (text of its button); "site" = no scope offered.
+const SCOPE = args.scope || 'Sunrise';
 const MAX_SECONDS = Number(args['max-seconds'] || 240);
 const [PROCTOR_EMAIL, PROCTOR_PASSWORD] = String(args.proctor || 'proctor@levante.test:proctor123').split(':');
 const PIN = args.pin || '2468';
@@ -145,6 +147,11 @@ await page.waitForSelector('text=Signed in as', { timeout: 30_000 });
 await page.click('button:has-text("administrations")');
 await page.waitForSelector(`button.child:has-text("${ADMINISTRATION}")`, { timeout: 60_000 });
 await page.click(`button.child:has-text("${ADMINISTRATION}")`);
+if (SCOPE !== 'site') {
+  await page.waitForSelector(`button.scope:has-text("${SCOPE}")`, { timeout: 60_000 });
+  await page.click(`button.scope:has-text("${SCOPE}")`);
+  console.log(`   scope: ${await page.evaluate(() => document.querySelector('button.scope.selected')?.textContent?.trim().replace(/\s+/g, ' '))}`);
+}
 const t0p = Date.now();
 await page.click('button:has-text("Provision this device")');
 await page.waitForSelector('.notice:has-text("Provisioned")', { timeout: 15 * 60_000 });
@@ -272,6 +279,16 @@ await writeFile(path.join(OUT, 'export.json'), JSON.stringify(bundle, null, 2));
 const totalTrials = summary.reduce((a, r) => a + r.trialCount, 0);
 console.log(`\nRESULT: requests while offline: ${requested.offline} (failed: ${failed.length}); runs: ${summary.length}; trials: ${totalTrials}`);
 if (failed.length) console.log('failed requests:\n  ' + failed.slice(0, 20).join('\n  '));
+
+// 5b. Still offline: the roster must now show the run just collected as done (merged with
+// the progress that came with the pack at provisioning).
+await page.goto(`${URL}/#/`, { waitUntil: 'load' });
+await page.waitForSelector('.child .progress', { timeout: 30_000 });
+const rosterProgress = await page.$$eval('.child', (els) =>
+  els.map((el) => `${el.querySelector('strong')?.textContent?.trim()}: ${el.querySelector('.progress')?.textContent?.trim()}`),
+);
+console.log(`   roster progress while offline: ${rosterProgress.join(' | ')}`);
+await page.screenshot({ path: path.join(OUT, '5-roster-after-run.png') });
 
 // 6. Reconnect and sync through the app's own Sync page (the proctor session is still live).
 console.log('6. back online; syncing via the Sync page…');

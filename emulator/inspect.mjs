@@ -30,4 +30,15 @@ for (const user of users.docs) {
     }
   }
 }
+
+const devices = await db.collection('offlineDevices').get();
+for (const dev of devices.docs) {
+  const d = dev.data();
+  const iso = (t) => t?.toDate?.().toISOString() ?? '-';
+  console.log(
+    `\ndevice ${dev.id}: platform=${d.platform} build=${d.appBuild} site=${d.siteId} pack=${d.packId}` +
+      ` scope=${d.scope ? `${d.scope.orgType}:${d.scope.name}` : 'site'} children=${d.childCount}` +
+      ` provisioned=${iso(d.provisionedAt)} lastSync=${iso(d.lastSyncAt)} runsSynced=${d.runsSynced ?? 0} trialsSynced=${d.trialsSynced ?? 0}`,
+  );
+}
 process.exit(0);

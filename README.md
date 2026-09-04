@@ -16,11 +16,19 @@ Numbers from the last verified run: `RESULTS.md`. Firestore field changes: `CONT
 ```
 PROVISION (online)                ASSESS (offline, days)              SYNC (online)
 proctor signs in                  device unlocked with proctor PIN    proctor signs in
-picks an administration           child picked from sealed roster     pending runs posted to
-provisionOfflinePack → roster,    TaskLauncher(core-tasks) with       syncOfflineRuns → runs/trials
-assignments, variant params       OfflineAppkit → sealed IndexedDB    under the child's uid →
-asset pack → Cache Storage        every trial appended in order       syncOnRunDocUpdate trigger
+picks an administration and       child picked from sealed roster     pending runs posted to
+a school or cohort                (with what is already done)         syncOfflineRuns → runs/trials
+provisionOfflinePack → roster,    TaskLauncher(core-tasks) with       under the child's uid →
+progress, variant params          OfflineAppkit → sealed IndexedDB    syncOnRunDocUpdate trigger;
+asset pack → Cache Storage        every trial appended in order       offlineDevices/{id} updated
 ```
+
+The proctor can be a `research_assistant`: both callables gate on permissions the RA role
+already holds (`assignments:read`; sync also `users:read`). A device is provisioned for one
+school or one cohort of the administration; the roster is those children who hold an
+assignment for it, each with their per-task progress as of provisioning, so a child assessed
+on another device (or online) shows as done. Every provision and sync is recorded in
+`offlineDevices/{deviceId}` — the beginnings of a fleet view.
 
 ## Layout
 
@@ -28,9 +36,11 @@ asset pack → Cache Storage        every trial appended in order       syncOnRu
 core-tasks/        git submodule → levante-framework/core-tasks @ spike/offline-assetbase
                    = main + cherry-pick of levante-in-a-box (setAssetBaseUrl + static manifests)
 functions-repo/    git submodule → levante-firebase-functions @ spike/sync-offline-runs
-                     src/administrations/provision-offline-pack.ts   roster + params for one administration
+                     src/administrations/list-offline-scopes.ts       schools/cohorts a device can be scoped to
+                     src/administrations/provision-offline-pack.ts   roster (scoped) + progress + params
                      src/runs/sync-offline-runs.ts                    ingest one run + trials, idempotent
-                     src/utils/offline-permissions.ts                 permissions-core gate shared by both
+                     src/utils/offline-permissions.ts                 permissions-core gate shared by all
+                     src/utils/offline-devices.ts                     offlineDevices/{deviceId} registry
 shell/             the launcher: Vue 3 + Vite + vite-plugin-pwa (injectManifest)
   src/sw.ts        precaches the app shell; serves /pack/<id>/… from the levante-packs cache
   src/offline/     auth (proctor session + callable client), packStore (runtime pack download,
@@ -68,24 +78,30 @@ cd emulator && npm run seed                      # terminal B
 cd ../shell && npm install --ignore-scripts && npx playwright install chromium webkit
 npm run build:emulator && npm run preview        # http://127.0.0.1:4173
 
-# 5. the proof
-node test/offline-run.mjs --tasks hearts-and-flowers,egma-math --pin 2468
+# 5. the proof (as the research assistant, device scoped to the school)
+node test/offline-run.mjs --tasks hearts-and-flowers,egma-math --pin 2468 --proctor ra@levante.test:ra123456 --scope Sunrise
 node test/offline-run.mjs --browser webkit --tasks hearts-and-flowers --pin 2468
-cd ../emulator && npm run inspect
+cd ../emulator && npm run inspect                 # runs, trigger results, offlineDevices
 ```
 
 By hand, in Chrome or Safari: open the app → Provision → set a PIN, sign in as
-`proctor@levante.test` / `proctor123`, load administrations, pick "Offline spike",
-Provision → back to Roster → turn Wi‑Fi off → play → Wi‑Fi on → Sync. The in-app
-Claude browser pane blocks service workers; use a real browser.
+`proctor@levante.test` / `proctor123` (site admin) or `ra@levante.test` / `ra123456`
+(research assistant), load administrations, pick "Offline spike", pick "Sunrise Primary"
+(school: Ada, Blaise) or "Pilot cohort A" (cohort: Blaise, Carla), Provision → back to
+Roster → turn Wi‑Fi off → play → Wi‑Fi on → Sync. The in-app Claude browser pane blocks
+service workers; use a real browser.
 
 ## Design notes
 
 - **Identity never moves.** Children come only from existing user documents
   (`provisionOfflinePack`), attributed by uid; the launcher refuses to run a child without
   birth month/year. The proctor authenticates only for provisioning and sync; the callables
-  gate on permissions-core (`assignments:read` to provision, `users:update` to sync) with a
-  legacy `adminOrgs` fallback.
+  gate on permissions-core (`assignments:read` to list scopes and provision; `assignments:read`
+  + `users:read` to sync — the research-assistant baseline) with a legacy `adminOrgs` fallback.
+- **A device serves one school or cohort.** `listOfflineScopes` offers the administration's
+  schools and cohorts; the pack id includes the scope; the roster is the scope's children who
+  hold the assignment, each with `progress` per task as of provisioning. The roster merges
+  that with completed runs stored on the device, so "done" is visible without a network.
 - **The pack is a cache of an administration.** `provisionOfflinePack` returns the tasks
   with the params *pinned on the administration* (the same snapshot `startTask` reads online)
   plus the roster; the device downloads stimuli, corpora and translations from the public
@@ -115,7 +131,8 @@ Claude browser pane blocks service workers; use a real browser.
 
 | Item | State |
 |---|---|
-| Provisioning from a real administration | done (callable + UI + resumable download) |
+| Provisioning from a real administration | done (callable + UI + resumable download); scoped to a school/cohort, with per-child progress and an `offlineDevices` registry |
+| Research-assistant proctor | done: the full loop verified as `research_assistant` (no new role) |
 | Encrypted outbox + lock screen | done (PIN vault; sealed envelopes; wipe) |
 | Sync engine with per-run status | done (Sync page; idempotent ingest) |
 | permissions-core in the callables | done (shared gate; legacy fallback) |

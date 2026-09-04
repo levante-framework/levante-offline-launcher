@@ -2,7 +2,7 @@
   <div class="page">
     <h1>LEVANTE Offline Launcher</h1>
     <p class="muted" v-if="pack">
-      <strong>{{ pack.name }}</strong> · {{ pack.locale }} · {{ pack.children.length }} children ·
+      <strong>{{ pack.name }}</strong> · {{ scopeLabel }} · {{ pack.locale }} · {{ pack.children.length }} children ·
       {{ pack.fileCount }} files / {{ mb(pack.totalBytes) }} MB · provisioned
       {{ pack.provisionedAt.slice(0, 16).replace('T', ' ') }} by {{ pack.provisionedBy }}
       <span v-if="pack.dateClosed"> · closes {{ pack.dateClosed.slice(0, 10) }}</span>
@@ -37,6 +37,9 @@
           <div class="muted mono">
             {{ child.assessmentPid || child.localId }} · born {{ child.birthYear }}-{{ String(child.birthMonth).padStart(2, '0') }}
           </div>
+          <div class="muted progress" :class="{ complete: doneCount(child) === assignedTaskIds(child).length }">
+            {{ doneCount(child) }}/{{ assignedTaskIds(child).length }} tasks done
+          </div>
         </button>
       </div>
 
@@ -46,22 +49,24 @@
           v-for="task in tasksForSelected"
           :key="task.taskId"
           class="primary big"
+          :class="{ done: selected && isDone(selected, task.taskId) }"
           type="button"
           :disabled="!selected"
           @click="startTask(task.taskId)"
         >
-          {{ task.label || task.taskId }}
+          {{ task.label || task.taskId }}<span v-if="selected && isDone(selected, task.taskId)"> ✓</span>
         </button>
       </div>
       <p class="muted" v-if="!selected">Select a child first.</p>
       <p class="muted" v-else-if="!tasksForSelected.length">No tasks are assigned to this child in this administration.</p>
+      <p class="muted" v-else>✓ = completed before provisioning or on this device; it can still be played again.</p>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { countRuns } from '../offline/db';
+import { countRuns, listRuns } from '../offline/db';
 import { getSelectedChildId, setSelectedChildId } from '../offline/device';
 import { loadPack } from '../offline/pack';
 import { platformLabel } from '../offline/storage';
@@ -71,6 +76,8 @@ import { lock, vaultExists } from '../offline/vault';
 const pack = ref<PackRecord | null>(null);
 const selectedId = ref<string | null>(getSelectedChildId());
 const pendingCount = ref(0);
+/** Tasks completed on this device since provisioning, per child local id. */
+const localDone = ref<Record<string, string[]>>({});
 const error = ref('');
 const online = ref(navigator.onLine);
 const platform = platformLabel();
@@ -79,6 +86,8 @@ const onOnline = () => (online.value = true);
 const onOffline = () => (online.value = false);
 
 const selected = computed<RosterEntry | null>(() => pack.value?.children.find((c) => c.localId === selectedId.value) ?? null);
+
+const scopeLabel = computed(() => (pack.value?.scope ? `${pack.value.scope.orgType} ${pack.value.scope.name}` : 'whole site'));
 
 const tasksForSelected = computed(() => {
   if (!pack.value) return [];
@@ -100,6 +109,12 @@ onMounted(async () => {
       setSelectedChildId(null);
     }
     pendingCount.value = (await countRuns()).pending;
+    const done: Record<string, string[]> = {};
+    for (const run of await listRuns()) {
+      if (run.packId !== pack.value.packId || !run.completed || run.aborted) continue;
+      (done[run.child.localId] ??= []).push(run.taskId);
+    }
+    localDone.value = done;
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   }
@@ -109,6 +124,18 @@ onUnmounted(() => {
   window.removeEventListener('online', onOnline);
   window.removeEventListener('offline', onOffline);
 });
+
+function assignedTaskIds(child: RosterEntry) {
+  return child.taskIds?.length ? child.taskIds : (pack.value?.tasks.map((t) => t.taskId) ?? []);
+}
+
+function isDone(child: RosterEntry, taskId: string) {
+  return child.progress?.[taskId] === 'completed' || (localDone.value[child.localId] ?? []).includes(taskId);
+}
+
+function doneCount(child: RosterEntry) {
+  return assignedTaskIds(child).filter((t) => isDone(child, t)).length;
+}
 
 function select(child: RosterEntry) {
   selectedId.value = child.localId;
@@ -130,3 +157,14 @@ function mb(bytes: number) {
   return (bytes / 1e6).toFixed(1);
 }
 </script>
+
+<style scoped>
+.progress.complete {
+  color: #2e7d32;
+  font-weight: 600;
+}
+button.done {
+  background: #2e7d32;
+  border-color: #2e7d32;
+}
+</style>

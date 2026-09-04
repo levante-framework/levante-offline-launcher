@@ -1,3 +1,5 @@
+export type ProgressState = 'assigned' | 'started' | 'completed';
+
 export interface RosterEntry {
   localId: string;
   /** Firebase uid (`roarUid`); always set when provisioned from an administration. */
@@ -8,6 +10,8 @@ export interface RosterEntry {
   birthYear: number;
   /** Task ids assigned to this child within the administration. */
   taskIds?: string[];
+  /** Per-task progress as of provisioning (what other devices / online sessions already collected). */
+  progress?: Record<string, ProgressState>;
 }
 
 export interface PackTaskConfig {
@@ -18,6 +22,14 @@ export interface PackTaskConfig {
   variantParams: Record<string, unknown>;
 }
 
+/** The school or cohort a device is provisioned for. */
+export interface PackScope {
+  orgType: 'school' | 'cohort';
+  orgId: string;
+  name: string;
+  siteId: string;
+}
+
 export type PackStatus = 'downloading' | 'ready' | 'error';
 
 /** A provisioned administration: everything the device needs to assess offline. */
@@ -25,6 +37,9 @@ export interface PackRecord {
   packId: string;
   administrationId: string;
   name: string;
+  siteId?: string | null;
+  /** null = the whole site (an administration with no schools/cohorts to scope to). */
+  scope?: PackScope | null;
   locale: string;
   dateClosed: string | null;
   tasks: PackTaskConfig[];

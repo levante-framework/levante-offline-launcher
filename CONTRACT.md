@@ -48,6 +48,30 @@ Paths and ids:
 
 Recommendation for the pipeline: define `collection_time = coalesce(clientTimestamp, serverTimestamp)` at the validator boundary, so online and offline trials read the same downstream. `server_timestamp` in the raw Redivis tables then remains "arrival time" for both.
 
+### Device registry (`offlineDevices/{deviceId}`) — new collection
+
+One document per launcher device id (minted on the device, `dev_<uuid>`), merged by
+`provisionOfflinePack` and `syncOfflineRuns`. Fleet state only; nothing downstream depends on it.
+
+| Field | Written by | Meaning |
+|---|---|---|
+| `deviceId`, `platform` (`web` / `capacitor-ios` / `capacitor-android`), `appBuild`, `lastSeenAt` | both | identity + last contact |
+| `siteId`, `administrationId`, `packId`, `scope` (`{orgType, orgId, name, siteId}` or `null`), `locale`, `childCount`, `taskIds`, `provisionedAt`, `provisionedBy` | provision | what the device currently holds |
+| `lastSyncAt`, `lastSyncBy`, `lastClockOffsetMs`, `runsSynced`, `trialsSynced` (increments) | sync | drain history |
+
+## 2b) Callables
+
+| Callable | Caller needs (permissions-core, on the administration's / child's site) | Input | Output |
+|---|---|---|---|
+| `listOfflineScopes` | `assignments:read` | `{administrationId}` | `{scopes: [{orgType: 'school'\|'cohort', orgId, name, siteId}]}` — the administration's own schools/cohorts if it targets some, else every unarchived school and cohort under its sites |
+| `provisionOfflinePack` | `assignments:read` | `{administrationId, scope?: {orgType, orgId}, device?: {deviceId, platform, appBuild}}` | `{pack: {packId, administrationId, name, siteId, scope, locale, dateClosed, tasks[], children[], serverNowMs}}`; `children[].progress` is `{taskId: 'assigned'\|'started'\|'completed'}` from the assignment (`progress` map, either key spelling, or `completedOn`) so a second device shows what a first one collected. The scope must belong to the administration's site (`resolveSiteId`); roster = students with `<schools|groups>.current ∋ orgId` holding a visible assignment |
+| `syncOfflineRuns` | `assignments:read` **and** `users:read` | `{deviceId, platform?, clientNowMs, run, trials[]}` | `{runId, trialsWritten, clockOffsetMs, orphan}` |
+
+The sync gate is deliberately the research-assistant baseline: the matrix has no run-level
+resource, and the decision (2026-09-04) is that RAs provision and drain devices without a
+new role. The run is written with the Admin SDK; the caller never gets write access to
+`users/{uid}/runs` themselves.
+
 ## 3) Cardinality and key safety
 
 - Run and trial ids are client-generated; collisions are cryptographically negligible (UUID v4; trial ids scoped to the run). Re-syncing the same device twice produces no duplicates.

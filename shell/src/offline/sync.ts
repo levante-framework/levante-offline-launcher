@@ -1,6 +1,6 @@
 import { callFunction } from './auth';
 import { getTrials, listRuns, updateRun } from './db';
-import { getDeviceId } from './device';
+import { deviceInfo } from './device';
 
 // Sync phase: each pending run is posted to the `syncOfflineRuns` callable as the
 // signed-in proctor. Runs are independent, so one failure never blocks the others.
@@ -16,11 +16,13 @@ export async function syncPendingRuns(): Promise<SyncResult> {
   let synced = 0;
   let failed = 0;
   let clockOffsetMs: number | null = null;
+  const device = deviceInfo();
   for (const run of runs) {
     try {
       const trials = await getTrials(run.runId);
       const result = await callFunction<{ status: string; clockOffsetMs?: number }>('syncOfflineRuns', {
-        deviceId: getDeviceId(),
+        deviceId: device.deviceId,
+        platform: device.platform,
         clientNowMs: Date.now(),
         run,
         trials,
