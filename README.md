@@ -121,7 +121,7 @@ Claude browser pane blocks service workers; use a real browser.
 | permissions-core in the callables | done (shared gate; legacy fallback) |
 | Data-contract checklist | documented in `CONTRACT.md`; validators not yet run |
 | iOS Safari (PWA) | verified on an iPad Air simulator, iOS 26.5: provision (~2 min), server killed, roster + task from the service-worker cache |
-| Capacitor iOS app | verified on the same simulator (Xcode 26.6): provision onto the app filesystem via native HTTP (<1 min), lock/unlock, roster, task running from `convertFileSrc` URLs. `shell/android/` is generated but unbuilt (no Android SDK here). Real hardware still untested |
+| Capacitor iOS app | verified on the same simulator (Xcode 26.6): provision onto the app filesystem via native HTTP (<1 min), lock/unlock across relaunch, roster, task running from `convertFileSrc` URLs, and sync of the stored run through `syncOfflineRuns`. `shell/android/` is generated but unbuilt (no Android SDK here). Real hardware still untested |
 | Trigger completion bug (upstream) | still open in `update-best-run-and-completion.ts` |
 | ROAR tasks, surveys, walk-up enrollment | out of scope |
 

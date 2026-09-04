@@ -92,8 +92,10 @@ Third attempt (filesystem backend + native HTTP) — **works**:
 | Roster | sealed roster decrypted; status bar shows `native ios · filesystem storage` |
 | hearts-and-flowers | fullscreen gate, then the instruction screen (otter image, audio control) — manifests, translations, images and audio all loaded from `capacitor://localhost/_capacitor_file_/…/packs/<packId>/…` |
 
-Screenshot: `shell/test/out/ios-capacitor-task.png`. Not exercised natively: full playthrough
-(same core-tasks code) — see the sync note below if present.
+| Relaunch → lock screen → unlock → Sync page | the run started above (incomplete, 0 trials, `taskAbort`) was decrypted and listed as pending; proctor sign-in and **`syncOfflineRuns` from the native app succeeded** ("Synced 1 run(s); 0 failed", clock offset 34 ms) |
+
+Screenshot: `shell/test/out/ios-capacitor-task.png`. Not exercised natively: a full playthrough
+(same core-tasks code as the browser runs).
 
 Two facts for the native design, both learned only by running it: (1) the Cache API cannot
 be used under a custom-scheme origin, so packs belong on the filesystem; (2) the GCS JSON
