@@ -83,7 +83,24 @@ origins), whereas the **object** endpoint answers `*` — which is why attempt 1
 `assets-per-task.json` and attempt 2 did not. Fix: route the app's HTTP through Capacitor's
 native stack (`plugins.CapacitorHttp.enabled`), which is not subject to WebView CORS.
 
-Third attempt (filesystem backend + native HTTP): see below once run.
+Third attempt (filesystem backend + native HTTP) — **works**:
+
+| Step | Outcome (Capacitor iOS, WKWebView, `capacitor://localhost`) |
+|---|---|
+| Relaunch | lock screen (vault persisted across reinstall; session key dropped), unlocked with the PIN |
+| Provisioning | sign-in + `getAdministrations` + `provisionOfflinePack` through native HTTP; **1,817 files / 16.8 MB written to the app filesystem in under a minute** (faster than Safari's Cache Storage) |
+| Roster | sealed roster decrypted; status bar shows `native ios · filesystem storage` |
+| hearts-and-flowers | fullscreen gate, then the instruction screen (otter image, audio control) — manifests, translations, images and audio all loaded from `capacitor://localhost/_capacitor_file_/…/packs/<packId>/…` |
+
+Screenshot: `shell/test/out/ios-capacitor-task.png`. Not exercised natively: full playthrough
+(same core-tasks code) — see the sync note below if present.
+
+Two facts for the native design, both learned only by running it: (1) the Cache API cannot
+be used under a custom-scheme origin, so packs belong on the filesystem; (2) the GCS JSON
+listing API is CORS-blocked for a custom-scheme origin, so asset downloads must go through
+native HTTP (`CapacitorHttp`) — or the launcher should stop calling the listing API at all and
+fetch a build-time pack manifest instead, which is the better design anyway (one request
+instead of a listing per folder, and no dependence on the bucket's CORS policy).
 
 ## Phase 1 (earlier the same day, static pack, no vault)
 

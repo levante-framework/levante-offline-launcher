@@ -120,8 +120,8 @@ Claude browser pane blocks service workers; use a real browser.
 | Sync engine with per-run status | done (Sync page; idempotent ingest) |
 | permissions-core in the callables | done (shared gate; legacy fallback) |
 | Data-contract checklist | documented in `CONTRACT.md`; validators not yet run |
-| WebKit behaviour | Playwright WebKit run only — **no Xcode/simulator on this machine**; real iPad untested |
-| Capacitor wrapper | scaffolded: `shell/android/` and `shell/ios/` generated, `capacitor.config.ts` sets the https scheme and iOS app-bound domains (needed for the service worker in WKWebView); `npm run build:emulator && npx cap sync` then open in Android Studio / Xcode — **not buildable on this machine** (no Xcode, no Android SDK) |
+| iOS Safari (PWA) | verified on an iPad Air simulator, iOS 26.5: provision (~2 min), server killed, roster + task from the service-worker cache |
+| Capacitor iOS app | verified on the same simulator (Xcode 26.6): provision onto the app filesystem via native HTTP (<1 min), lock/unlock, roster, task running from `convertFileSrc` URLs. `shell/android/` is generated but unbuilt (no Android SDK here). Real hardware still untested |
 | Trigger completion bug (upstream) | still open in `update-best-run-and-completion.ts` |
 | ROAR tasks, surveys, walk-up enrollment | out of scope |
 
