@@ -193,11 +193,29 @@ const CLICK_SELECTORS = [
   '.jspsych-display-element [class*="response"] img:visible',
   '#jspsych-target button:visible',
 ];
+const mountFailures = [];
 for (const task of TASKS) {
   console.log(`3. ${task}: selecting ${CHILD} and starting the task offline…`);
   await page.click(`button.child:has-text("${CHILD}")`);
+  const consoleErrors = [];
+  const onConsole = (msg) => msg.type() === 'error' && consoleErrors.push(msg.text().slice(0, 300));
+  page.on('console', onConsole);
   await page.click(`button:has-text("${task}")`);
-  await page.waitForSelector('.jspsych-content-wrapper', { timeout: 60_000 });
+  try {
+    await page.waitForSelector('.jspsych-content-wrapper', { timeout: 60_000 });
+  } catch {
+    // A task that never mounts (e.g. corpus validation failed) must not end the battery.
+    page.off('console', onConsole);
+    const why = consoleErrors.find((t) => /Error/.test(t)) ?? 'no jsPsych wrapper within 60 s';
+    console.log(`   FAILED TO MOUNT: ${why}`);
+    mountFailures.push({ task, why });
+    await page.screenshot({ path: path.join(OUT, `3-${task}-failed.png`) });
+    await page.goto(`${URL}/#/`, { waitUntil: 'load' });
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForSelector('text=Who is playing?', { timeout: 30_000 });
+    continue;
+  }
+  page.off('console', onConsole);
   console.log('   task loaded (jsPsych mounted)');
   await page.waitForTimeout(1200);
   await page.screenshot({ path: path.join(OUT, `3-${task}-start.png`) });
@@ -277,8 +295,9 @@ const bundle = {
 await writeFile(path.join(OUT, 'export.json'), JSON.stringify(bundle, null, 2));
 
 const totalTrials = summary.reduce((a, r) => a + r.trialCount, 0);
-console.log(`\nRESULT: requests while offline: ${requested.offline} (failed: ${failed.length}); runs: ${summary.length}; trials: ${totalTrials}`);
+console.log(`\nRESULT: requests while offline: ${requested.offline} (failed: ${failed.length}); runs: ${summary.length}; trials: ${totalTrials}; tasks that did not mount: ${mountFailures.length}`);
 if (failed.length) console.log('failed requests:\n  ' + failed.slice(0, 20).join('\n  '));
+for (const f of mountFailures) console.log(`   did not mount: ${f.task} — ${f.why}`);
 
 // 5b. Still offline: the roster must now show the run just collected as done (merged with
 // the progress that came with the pack at provisioning).
@@ -289,6 +308,23 @@ const rosterProgress = await page.$$eval('.child', (els) =>
 );
 console.log(`   roster progress while offline: ${rosterProgress.join(' | ')}`);
 await page.screenshot({ path: path.join(OUT, '5-roster-after-run.png') });
+
+// 5c. Child (kiosk) mode: proctor controls gone, proctor routes redirect, PIN to leave.
+await page.click('a:has-text("Start child mode")');
+await page.waitForSelector('a:has-text("Proctor")', { timeout: 10_000 });
+const kioskLinks = await page.$$eval('.status-bar a', (els) => els.length);
+await page.goto(`${URL}/#/sync`, { waitUntil: 'load' });
+await page.waitForSelector('h2:has-text("Who is playing?")', { timeout: 30_000 });
+const kioskRedirected = !(await page.$('button:has-text("Sync")'));
+await page.screenshot({ path: path.join(OUT, '5-child-mode.png') });
+await page.click('a:has-text("Proctor")');
+await page.fill('input[name=exitPin]', '0000');
+await page.click('button:has-text("Exit child mode")');
+const wrongPinRejected = !!(await page.waitForSelector('.proctor-exit .error', { timeout: 10_000 }));
+await page.fill('input[name=exitPin]', PIN);
+await page.click('button:has-text("Exit child mode")');
+await page.waitForSelector('a[href="#/sync"]', { timeout: 10_000 });
+console.log(`   child mode: proctor links hidden=${kioskLinks === 0}, #/sync redirected to roster=${kioskRedirected}, wrong PIN rejected=${wrongPinRejected}, exited with PIN`);
 
 // 6. Reconnect and sync through the app's own Sync page (the proctor session is still live).
 console.log('6. back online; syncing via the Sync page…');

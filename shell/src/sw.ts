@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute } from 'workbox-precaching';
+import { createPartialResponse } from 'workbox-range-requests';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
 
 declare const self: ServiceWorkerGlobalScope;
@@ -17,11 +18,16 @@ registerRoute(
   async ({ request }) => {
     const cache = await caches.open(PACK_CACHE);
     const hit = await cache.match(request.url, { ignoreSearch: true });
-    if (hit) return hit;
-    return new Response(`Not in any provisioned pack: ${new URL(request.url).pathname}`, {
-      status: 404,
-      headers: { 'content-type': 'text/plain' },
-    });
+    if (!hit) {
+      return new Response(`Not in any provisioned pack: ${new URL(request.url).pathname}`, {
+        status: 404,
+        headers: { 'content-type': 'text/plain' },
+      });
+    }
+    // Media elements (the instruction videos in mental-rotation, same-different-selection
+    // and memory-game) ask for byte ranges; Safari refuses to play from a 200 answer to a
+    // Range request, so slice the cached body into a 206.
+    return request.headers.has('range') ? createPartialResponse(request, hit) : hit;
   },
 );
 

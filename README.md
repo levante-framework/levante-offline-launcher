@@ -129,6 +129,12 @@ service workers; use a real browser.
   corpora or translations are warnings in the index (`--strict` fails the build). Without
   `VITE_BUNDLE_BASE` the launcher falls back to listing the bucket folders and fetching
   ~1,800 objects, which is what made WebKit take minutes.
+- **Child mode.** "Start child mode" on the roster hides the proctor controls (sync,
+  provisioning, lock, PIDs/birth dates) and makes `#/sync` and `#/provision` route back to the
+  roster; leaving it requires the device PIN, verified against the vault rather than the
+  session key. The flag survives the reload core-tasks needs between tasks and a relaunch.
+  It is a UI guard, not a security boundary: on a real deployment pair it with the OS kiosk
+  (Guided Access / Android screen pinning or an MDM kiosk profile).
 - **Sealed at rest.** A proctor PIN (PBKDF2, 310k iterations) derives an AES-GCM key.
   Runs, trials and the roster are stored as small plaintext envelopes (ids, indexes, counts)
   plus one sealed box; the key lives in `sessionStorage` after unlock so the reload
@@ -150,6 +156,8 @@ service workers; use a real browser.
 |---|---|
 | Provisioning from a real administration | done (callable + UI + resumable download); scoped to a school/cohort, with per-child progress and an `offlineDevices` registry |
 | Research-assistant proctor | done: the full loop verified as `research_assistant` (no new role) |
+| Bundled packs | done: `build-bundles.mjs` + streaming/resumable download; WebKit provisioning 47 s → 1 s |
+| Child (kiosk) mode | done: proctor controls and routes gated behind the PIN; exercised by the e2e |
 | Encrypted outbox + lock screen | done (PIN vault; sealed envelopes; wipe) |
 | Sync engine with per-run status | done (Sync page; idempotent ingest) |
 | permissions-core in the callables | done (shared gate; legacy fallback) |
@@ -158,6 +166,39 @@ service workers; use a real browser.
 | Capacitor iOS app | verified on the same simulator (Xcode 26.6): provision onto the app filesystem via native HTTP (<1 min), lock/unlock across relaunch, roster, task running from `convertFileSrc` URLs, and sync of the stored run through `syncOfflineRuns`. `shell/android/` is generated but unbuilt (no Android SDK here). Real hardware still untested |
 | Trigger completion bug (upstream) | still open in `update-best-run-and-completion.ts` |
 | ROAR tasks, surveys, walk-up enrollment | out of scope |
+
+## Android (Capacitor) — status
+
+`shell/android/` is generated (`npx cap add android`). This Mac has Google's command-line
+tools (`brew install --cask android-commandlinetools android-platform-tools`; JDK from
+`/opt/homebrew/opt/openjdk`) but no SDK packages yet, because installing them means
+accepting Google's SDK licence — a person's step:
+
+```bash
+export JAVA_HOME=/opt/homebrew/opt/openjdk ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
+$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
+$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "emulator" "system-images;android-35;google_apis;arm64-v8a"
+$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager create avd -n levante-tablet -k "system-images;android-35;google_apis;arm64-v8a" -d pixel_tablet
+```
+
+Then `cd shell && npm run build:emulator && npx cap sync android && cd android && ./gradlew assembleDebug`,
+boot the AVD with `$ANDROID_HOME/emulator/emulator -avd levante-tablet`, and
+`adb install app/build/outputs/apk/debug/app-debug.apk`. The Android WebView serves the
+shell from `https://localhost`, so both storage backends are viable there; the app uses the
+filesystem backend on every native platform for consistency with iOS.
+
+## Findings for upstream (from running the whole battery offline)
+
+- **theory-of-mind's default corpus does not start.** `corpus/theory-of-mind/theory-of-mind-item-bank.csv`
+  (2025-09) still contains 13 hostile-attribution items whose prompt keys
+  (`hostileAttributionScene1Instruct1`, …) exist in neither the theory-of-mind nor the
+  hostile-attribution en-US translation file, so core-tasks' corpus validation throws before
+  the first trial. The bucket's 2026 `theory-of-mind-no-ha-item-bank.csv` runs; whichever
+  corpus production variants pin, the default one is a trap for anyone building a pack (or
+  a variant) without knowing that. This is exactly the class of problem the bundle builder
+  should catch, once it knows which prompt keys a corpus needs.
+- **child-survey has no `visual/child-survey/` objects**, only a folder placeholder; the
+  task still asks for the listing. Packs must answer an empty listing, as the bucket does.
 
 ## Known gaps
 

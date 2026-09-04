@@ -1,20 +1,21 @@
 <template>
   <div class="page">
     <h1>LEVANTE Offline Launcher</h1>
-    <p class="muted" v-if="pack">
+    <p class="muted" v-if="pack && !childMode">
       <strong>{{ pack.name }}</strong> · {{ scopeLabel }} · {{ pack.locale }} · {{ pack.children.length }} children ·
       {{ pack.fileCount }} files / {{ mb(pack.totalBytes) }} MB · provisioned
       {{ pack.provisionedAt.slice(0, 16).replace('T', ' ') }} by {{ pack.provisionedBy }}
       <span v-if="pack.dateClosed"> · closes {{ pack.dateClosed.slice(0, 10) }}</span>
     </p>
 
-    <div class="status-bar">
+    <div class="status-bar" v-if="!childMode">
       <span>{{ online ? 'Network: online' : 'Network: offline' }}</span>
       <span>{{ platform }}</span>
       <span>Pending runs: {{ pendingCount }}</span>
       <a href="#/sync">Sync &amp; export</a>
       <a href="#/provision">Provision</a>
       <a href="#/" @click.prevent="lockDevice">Lock device</a>
+      <a v-if="pack" href="#/" @click.prevent="enterChildMode">Start child mode</a>
     </div>
 
     <div v-if="error" class="error" style="margin-top: 12px">
@@ -34,7 +35,7 @@
           @click="select(child)"
         >
           <div><strong>{{ child.displayName }}</strong></div>
-          <div class="muted mono">
+          <div class="muted mono" v-if="!childMode">
             {{ child.assessmentPid || child.localId }} · born {{ child.birthYear }}-{{ String(child.birthMonth).padStart(2, '0') }}
           </div>
           <div class="muted progress" :class="{ complete: doneCount(child) === assignedTaskIds(child).length }">
@@ -61,6 +62,16 @@
       <p class="muted" v-else-if="!tasksForSelected.length">No tasks are assigned to this child in this administration.</p>
       <p class="muted" v-else>✓ = completed before provisioning or on this device; it can still be played again.</p>
     </template>
+
+    <div v-if="childMode" class="proctor-exit">
+      <form v-if="exitPrompt" class="row" @submit.prevent="exitChildMode">
+        <input v-model="exitPin" name="exitPin" type="password" inputmode="numeric" pattern="[0-9]*" placeholder="proctor PIN" autocomplete="off" required />
+        <button type="submit" class="primary" :disabled="busy">Exit child mode</button>
+        <button type="button" @click="exitPrompt = false">Cancel</button>
+        <span v-if="exitError" class="error">{{ exitError }}</span>
+      </form>
+      <a v-else href="#/" class="muted" @click.prevent="exitPrompt = true">Proctor</a>
+    </div>
   </div>
 </template>
 
@@ -68,10 +79,11 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { countRuns, listRuns } from '../offline/db';
 import { getSelectedChildId, setSelectedChildId } from '../offline/device';
+import { isChildMode, setChildMode } from '../offline/mode';
 import { loadPack } from '../offline/pack';
 import { platformLabel } from '../offline/storage';
 import type { PackRecord, RosterEntry } from '../offline/types';
-import { lock, vaultExists } from '../offline/vault';
+import { lock, unlock, vaultExists } from '../offline/vault';
 
 const pack = ref<PackRecord | null>(null);
 const selectedId = ref<string | null>(getSelectedChildId());
@@ -81,6 +93,11 @@ const localDone = ref<Record<string, string[]>>({});
 const error = ref('');
 const online = ref(navigator.onLine);
 const platform = platformLabel();
+const childMode = ref(isChildMode());
+const exitPrompt = ref(false);
+const exitPin = ref('');
+const exitError = ref('');
+const busy = ref(false);
 
 const onOnline = () => (online.value = true);
 const onOffline = () => (online.value = false);
@@ -153,6 +170,29 @@ function lockDevice() {
   window.location.reload();
 }
 
+function enterChildMode() {
+  setChildMode(true);
+  childMode.value = true;
+  window.location.hash = '#/';
+}
+
+// Leaving child mode re-checks the PIN against the vault rather than trusting the session key.
+async function exitChildMode() {
+  exitError.value = '';
+  busy.value = true;
+  try {
+    await unlock(exitPin.value);
+    setChildMode(false);
+    childMode.value = false;
+    exitPrompt.value = false;
+  } catch (err) {
+    exitError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    exitPin.value = '';
+    busy.value = false;
+  }
+}
+
 function mb(bytes: number) {
   return (bytes / 1e6).toFixed(1);
 }
@@ -166,5 +206,17 @@ function mb(bytes: number) {
 button.done {
   background: #2e7d32;
   border-color: #2e7d32;
+}
+.proctor-exit {
+  margin-top: 48px;
+  font-size: 0.9em;
+}
+.proctor-exit input {
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  min-width: 140px;
+  letter-spacing: 0.3em;
 }
 </style>

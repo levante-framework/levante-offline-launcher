@@ -42,8 +42,15 @@ const DEFAULT_CORPUS = {
   'child-survey': 'child-survey-item-bank',
 };
 const NO_CORPUS = new Set(['hearts-and-flowers', 'memory-game', 'intro']);
-// core-tasks reads adult-reasoning strings from the math item bank.
-const translationTaskFor = (taskId) => (taskId === 'adult-reasoning' ? 'egma-math' : taskId);
+// Which task translation files core-tasks' getTranslations.ts fetches (besides general/):
+// intro reads only the general strings; hostile-attribution also reads theory-of-mind's;
+// adult-reasoning reads the math item bank's.
+function translationTasksFor(taskId) {
+  if (taskId === 'intro') return [];
+  if (taskId === 'adult-reasoning') return ['egma-math'];
+  if (taskId === 'hostile-attribution') return ['hostile-attribution', 'theory-of-mind'];
+  return [taskId];
+}
 
 const args = parseArgs(process.argv.slice(2));
 const tasks = String(args.tasks || 'hearts-and-flowers').split(',').map((s) => s.trim()).filter(Boolean);
@@ -91,7 +98,7 @@ async function main() {
     const warnings = [];
     const items = [...(await listPrefix(`visual/${taskId}/`)), ...pickAudio(apt[taskId]?.audio ?? [], localeAudioByBase, taskId, warnings)];
     if (!apt[taskId]) warnings.push(`no entry for ${taskId} in audio/assets-per-task.json`);
-    const extras = [`translations/itembank/${translationTaskFor(taskId)}/${locale}/item-bank-translations.json`];
+    const extras = translationTasksFor(taskId).map((t) => `translations/itembank/${t}/${locale}/item-bank-translations.json`);
     const corpora = {};
     if (!NO_CORPUS.has(taskId)) {
       const corpus = DEFAULT_CORPUS[taskId];

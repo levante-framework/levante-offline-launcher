@@ -10,6 +10,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { isChildMode } from './offline/mode';
 import { isUnlocked, vaultExists } from './offline/vault';
 import LockView from './views/LockView.vue';
 import ProvisionView from './views/ProvisionView.vue';
@@ -33,8 +34,9 @@ onUnmounted(() => window.removeEventListener('hashchange', onHashChange));
 const route = computed(() => {
   const m = hash.value.match(/^#\/task\/([^/]+)/);
   if (m) return { name: 'task' as const, taskId: decodeURIComponent(m[1]) };
-  if (hash.value.startsWith('#/sync')) return { name: 'sync' as const, taskId: '' };
-  if (hash.value.startsWith('#/provision')) return { name: 'provision' as const, taskId: '' };
+  // In child mode the proctor screens are unreachable by URL as well as by link.
+  if (hash.value.startsWith('#/sync') && !isChildMode()) return { name: 'sync' as const, taskId: '' };
+  if (hash.value.startsWith('#/provision') && !isChildMode()) return { name: 'provision' as const, taskId: '' };
   return { name: 'roster' as const, taskId: '' };
 });
 </script>

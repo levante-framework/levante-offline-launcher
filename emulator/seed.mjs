@@ -43,6 +43,18 @@ const TASKS = [
     taskId: 'matrix-reasoning',
     params: { taskName: 'matrix-reasoning', language: LOCALE, storeItemId: true, cat: true, semThreshold: 0.3, startingTheta: 0, maxIncorrect: 50, numberOfTrials: 25 },
   },
+  // The rest of the core battery with base params (no CAT), to prove every task's assets and
+  // code run offline; the e2e caps each run by time.
+  ...['mental-rotation', 'same-different-selection', 'trog', 'vocab', 'memory-game', 'child-survey', 'intro'].map((taskId) => ({
+    taskId,
+    params: { taskName: taskId, language: LOCALE, storeItemId: true },
+  })),
+  // The default ToM corpus (theory-of-mind-item-bank.csv, 2025-09) still carries 13
+  // hostile-attribution items whose prompt keys exist in no en-US translation file, so
+  // core-tasks' corpus validation refuses to start it. The bucket's 2026 "no-ha" corpus is
+  // what a variant would pin; a non-default corpus also exercises the launcher's
+  // single-object fetch path alongside the bundles.
+  { taskId: 'theory-of-mind', params: { taskName: 'theory-of-mind', language: LOCALE, storeItemId: true, corpus: 'theory-of-mind-no-ha-item-bank' } },
 ];
 
 const app = admin.initializeApp({ projectId: PROJECT_ID });

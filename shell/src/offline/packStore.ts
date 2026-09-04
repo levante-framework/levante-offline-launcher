@@ -173,8 +173,11 @@ async function downloadFromBundles(pack: PackRecord, { id, progress, report }: S
     report();
   }
 
-  // The folder listings core-tasks asks for, from the union of every bundle's entries.
+  // The folder listings core-tasks asks for, from the union of every bundle's entries. The
+  // four it always lists get a manifest even when empty (child-survey has no visual folder;
+  // the bucket answers such a listing with an empty page, and so must the pack).
   const byFolder = new Map<string, Array<{ name: string; contentType: string }>>();
+  for (const folder of [`audio/${pack.locale}`, 'audio/shared', 'visual/shared', ...pack.tasks.map((t) => `visual/${t.taskId}`)]) byFolder.set(folder, []);
   for (const index of indexes) {
     for (const e of index.entries) {
       const parts = e.name.split('/');

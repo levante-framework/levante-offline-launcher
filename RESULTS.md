@@ -4,6 +4,33 @@ Environment: macOS, Node 22, Playwright (Chromium 151 / WebKit 26.5), Firebase e
 (auth + firestore + functions) running the real `levante-admin` functions codebase plus the
 two new callables. core-tasks 1.3.17 + the `levante-in-a-box` asset commit.
 
+## Full battery offline — 2026-09-04
+
+Seed extended to all eleven tasks in one administration (base params, no CAT except the
+three original ones); bundles for the whole battery built in 68 s (255 MB; theory-of-mind
+150.6 MB, trog 44.4 MB, vocab 28.4 MB). Provisioning the 11-task pack — **5,349 files /
+265.6 MB — took 4 s in Chromium and 3 s in WebKit** from the bundle server.
+
+| Task | Chromium (auto-play, 40–45 s budget) | Notes |
+|---|---|---|
+| hearts-and-flowers | mounted, played | |
+| egma-math (CAT) | mounted, played | |
+| matrix-reasoning (CAT) | mounted, played | |
+| mental-rotation | mounted, played | also in WebKit (video instructions served as 206 by the SW) |
+| same-different-selection | mounted, played | also in WebKit (video) |
+| trog | mounted, played | |
+| vocab | mounted, played | |
+| theory-of-mind | **refused to start with the default corpus**: `Corpus validation failed (13): hostile-attribution-scene1-instruct1: Missing prompt for hostileAttributionScene1Instruct1 …` — mounted and played once the variant pinned `corpus: theory-of-mind-no-ha-item-bank` (fetched singly next to the bundle) | upstream content issue, see README |
+| memory-game | mounted, played | also in WebKit (video) |
+| child-survey | first attempt 404 on `manifests/visual/child-survey.json` (the bucket has only a folder placeholder there); mounted and played after the pack writes the four standard listings even when empty | pack-layout fix |
+| intro | mounted, played to its end | |
+
+Across the runs: **0 failed requests while offline** (235 + 140 in Chromium for the second
+and third groups, 528 in WebKit), every run synced (4 + 2 + 3), kiosk checks passed in both
+engines (proctor links hidden, `#/sync` redirected to the roster, wrong PIN rejected, exit
+with the PIN). The proof script now continues past a task that fails to mount and reports
+it in the result line, which is what made the two failures above diagnosable.
+
 ## Content-addressed bundles — 2026-09-04
 
 `pack-builder/build-bundles.mjs` built the three-task battery from the public bucket in
