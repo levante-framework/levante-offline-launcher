@@ -166,7 +166,7 @@ service workers; use a real browser.
 | permissions-core in the callables | done (shared gate; legacy fallback) |
 | Data-contract checklist | documented in `CONTRACT.md`; validators not yet run |
 | iOS Safari (PWA) | verified on an iPad Air simulator, iOS 26.5: provision (~2 min), server killed, roster + task from the service-worker cache |
-| Capacitor iOS app | verified on the same simulator (Xcode 26.6): provision onto the app filesystem via native HTTP (<1 min), lock/unlock across relaunch, roster, task running from `convertFileSrc` URLs, and sync of the stored run through `syncOfflineRuns`. Real hardware still untested |
+| Capacitor iOS app | verified on the same simulator (Xcode 26.6): provision onto the app filesystem via native HTTP, lock/unlock across relaunch, roster, task running from `convertFileSrc` URLs, and sync of the stored run through `syncOfflineRuns`; re-verified on the part-file bundles (266 MB in under a minute, mental-rotation from the stored files). Real hardware still untested |
 | Capacitor Android app | verified on a Pixel Tablet AVD: full loop (provision 266 MB in 47 s into Cache Storage, radios off, roster + task, child mode, sync) driven by `--browser android`. Real hardware still untested |
 | Trigger completion bug (upstream) | still open in `update-best-run-and-completion.ts` |
 | ROAR tasks, surveys, walk-up enrollment | out of scope |
@@ -202,6 +202,37 @@ backend on Android is **Cache Storage + service worker** (the origin is `https:/
 not the app filesystem as on iOS — see `RESULTS.md` for the two Capacitor-Android facts
 behind that (its HTTP interceptor fails non-zero Range requests, and its file server does not
 answer media requests), which also turned the bundle format into 2 MB part files.
+
+## First QA pass — proposed
+
+Everything above was verified on emulators/simulators by an auto-player. The first QA pass
+should be a person with real devices, in this order:
+
+1. **Reproduce the proof on a second machine** (README quick start, both engines). If the
+   setup instructions fail, that is the first bug.
+2. **Deploy the three callables to `hs-levante-admin-dev`** and point a build at it
+   (`.env.dev`); until then everything runs against the emulator seed, which is not real data.
+3. **Real devices, one of each:** an iPad (TestFlight or a dev-signed build) and the cheapest
+   Android tablet the field will actually buy (sideloaded APK). Provision a real dev-project
+   administration scoped to one school; check the roster and per-child progress against the
+   dashboard.
+4. **The offline day:** airplane mode on, reboot the tablet, wait, reopen → lock → PIN →
+   roster. Play every core task to completion with a real child-like pace; note any task whose
+   audio, video or images fail (the emulator proof only checks that nothing 404s).
+5. **Persistence:** leave the device untouched for a week in airplane mode (iOS 7-day eviction
+   applies to Safari, not the app, but verify); update the app with a pending outbox and check
+   the runs survive.
+6. **Sync correctness:** sync over a poor link (throttled Wi‑Fi, then interrupted mid-sync);
+   confirm each run lands once under the right child, `progress`/`bestRun` update, a second
+   sync creates no duplicates, and the `offlineDevices` row reflects it.
+7. **Clock skew:** set the tablet clock wrong by hours, collect, sync; `offline.clockOffsetMs`
+   should absorb it and `timeStarted` should be right.
+8. **PIN and child mode:** wrong PINs, lock/unlock, wipe; a child trying to leave child mode;
+   Guided Access / screen pinning on top.
+9. **Data contract:** run the support repo's validators on the synced runs and diff an offline
+   run against an online run of the same task in Redivis.
+10. **Log everything in the QA knowledge base** (levante-support) with device model, OS,
+    app build (`appBuild` on the roster), pack/bundle ids, and the `offlineDevices` row.
 
 ## Findings for upstream (from running the whole battery offline)
 

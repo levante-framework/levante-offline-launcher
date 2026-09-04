@@ -4,6 +4,19 @@ Environment: macOS, Node 22, Playwright (Chromium 151 / WebKit 26.5), Firebase e
 (auth + firestore + functions) running the real `levante-admin` functions codebase plus the
 two new callables. core-tasks 1.3.17 + the `levante-in-a-box` asset commit.
 
+## Capacitor iOS app, re-run on the part-file bundles — 2026-09-04 (iPad Air 11" simulator, iOS 26.5)
+
+Driven by hand after the format change, because the iOS app takes the reader's
+"whole part in memory" branch (its native fetch has no body stream), which Android does not
+exercise. Fresh install: PIN vault, sign-in as `ra@levante.test`, "Offline spike" →
+"Sunrise Primary" → **5,349 files / 265.6 MB onto the app filesystem in under a minute**
+(2 MB parts through native HTTP, each entry SHA-verified and written through the
+Filesystem plugin). Cold relaunch → lock screen → PIN → roster (`native ios · filesystem
+storage`, Ada 2/11 and Blaise 1/11 from the server's progress) → mental-rotation:
+fullscreen gate, then the instruction screen with its stimuli loaded from
+`capacitor://localhost/_capacitor_file_/…` (screenshot `shell/test/out/ios-capacitor-parts-task.png`).
+Sync was not repeated (unchanged code, verified natively earlier in the day).
+
 ## Capacitor Android app — 2026-09-04 (Pixel Tablet AVD, API 36 image, arm64, headless)
 
 Toolchain from the command line only: Homebrew `android-commandlinetools` + `openjdk@21`

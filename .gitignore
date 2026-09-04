@@ -23,3 +23,6 @@ emulator/ui-debug.log
 # Content-addressed bundles + the builder's object cache; rebuild with pack-builder/build-bundles.mjs
 pack-builder/bundles/
 pack-builder/cache/
+
+# Xcode derived data for the simulator build (xcodebuild -derivedDataPath)
+shell/ios/build/
