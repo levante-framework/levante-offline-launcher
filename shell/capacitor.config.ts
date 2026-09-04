@@ -1,5 +1,9 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
+// Emulator builds talk plain HTTP to the host's Firebase emulator and bundle server
+// (10.0.2.2 from an AVD); production never sets this.
+const cleartext = process.env.CAP_CLEARTEXT === '1';
+
 const config: CapacitorConfig = {
   appId: 'org.levante.offlinelauncher',
   appName: 'LEVANTE Offline Launcher',
@@ -7,6 +11,10 @@ const config: CapacitorConfig = {
   server: {
     // https scheme on Android so the web app is a secure context (service worker, WebCrypto).
     androidScheme: 'https',
+    ...(cleartext ? { cleartext: true } : {}),
+  },
+  android: {
+    ...(cleartext ? { allowMixedContent: true } : {}),
   },
   ios: {
     // WKWebView only allows service workers for app-bound domains; the launcher's shell and

@@ -9,7 +9,8 @@
     "build:emulator": "vite build --mode emulator",
     "test:offline": "node test/offline-run.mjs",
     "preview": "vite preview --port 4173 --host",
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit",
+    "build:android": "vite build --mode android"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.1",

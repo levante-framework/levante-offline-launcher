@@ -8,10 +8,11 @@
 //                            its default corpus, its item-bank translations
 //   shared/<locale>          audio/shared/**, visual/shared/**, shared audio/<locale>/*,
 //                            general translations, audio/assets-per-task.json
-// A bundle is two files under <out>/<unit>/:
-//   <bundleId>.json   index: entries [{name, contentType, offset, length, sha256}] + provenance + warnings
-//   <bundleId>.bin    the entries' bytes concatenated in index order — no compression (stimuli
-//                     already are) so slicing is trivial and HTTP Range resume works
+// A bundle is an index plus part files under <out>/<unit>/:
+//   <bundleId>.json   index: entries [{name, contentType, offset, length, sha256}], partBytes, parts, provenance, warnings
+//   <bundleId>.pNNNN  the entries' bytes concatenated in index order — no compression (stimuli
+//                     already are) so slicing is trivial — cut into fixed 2 MB parts (plain GETs,
+//                     no Range requests; a resume starts at the part holding the first missing entry)
 // <out>/catalog.json maps every unit to its current bundleId. bundleId = sha256 over the entry
 // names and hashes: identical content always yields the same id, so it doubles as the pack's
 // version stamp on every run.
@@ -27,6 +28,7 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const GCS = 'https://storage.googleapis.com';
+const PART_BYTES = 2 * 1024 * 1024;
 
 // Mirrors task-launcher/src/tasks/shared/helpers/config.ts (defaultCorpus).
 const DEFAULT_CORPUS = {
@@ -164,7 +166,17 @@ async function buildBundle(unit, items, extras, corpora, warnings) {
     warnings,
     entries,
   };
-  await writeFile(path.join(dir, `${bundleId}.bin`), Buffer.concat(parts));
+  // The blob ships as fixed-size part files rather than one .bin: a device then never needs
+  // an HTTP Range request (Capacitor's Android interceptor fails on ranges that do not start
+  // at byte 0, and the bucket's CORS would have to allow the header), memory per request is
+  // bounded, and a resumed download starts at the part holding the first missing entry.
+  const blob = Buffer.concat(parts);
+  const partCount = Math.max(1, Math.ceil(blob.length / PART_BYTES));
+  for (let p = 0; p < partCount; p++) {
+    await writeFile(path.join(dir, `${bundleId}.p${String(p).padStart(4, '0')}`), blob.subarray(p * PART_BYTES, (p + 1) * PART_BYTES));
+  }
+  index.partBytes = PART_BYTES;
+  index.parts = partCount;
   await writeFile(path.join(dir, `${bundleId}.json`), JSON.stringify(index));
   console.log(`  ${unit}: ${entries.length} files, ${(offset / 1e6).toFixed(1)} MB → ${bundleId}${warnings.length ? `   ⚠ ${warnings.length} warning(s)` : ''}`);
   for (const w of warnings) console.log(`      ⚠ ${w}`);

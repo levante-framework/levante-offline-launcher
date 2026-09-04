@@ -9,13 +9,14 @@
 //
 //   node test/offline-run.mjs [--url http://127.0.0.1:4173] [--tasks hearts-and-flowers,egma-math]
 //                             [--child Ada] [--administration "Offline spike"] [--scope Sunrise|site] [--max-seconds 240]
-//                             [--proctor proctor@levante.test:proctor123]
+//                             [--proctor proctor@levante.test:proctor123] [--browser chromium|webkit|android]
+//                             [--offline-mode emulated|server-down|adb]
 
-import { spawn } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
-import { chromium, webkit } from 'playwright';
+import { _android as android, chromium, webkit } from 'playwright';
 
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, a, i, arr) => {
@@ -27,20 +28,29 @@ const args = Object.fromEntries(
 // 'server-down' starts its own web server for the app and kills it for the offline phase,
 // so every app request fails at the TCP level unless the service worker answers it — the
 // physical equivalent of a tablet losing Wi‑Fi, and the only mode WebKit handles.
-const OFFLINE_MODE = args['offline-mode'] || (args.browser === 'webkit' ? 'server-down' : 'emulated');
+// --browser android drives the Capacitor app in a running Android emulator over Chrome
+// DevTools (adb forward → connectOverCDP); offline there means the AVD's radios off ('adb').
+const ENGINE = args.browser === 'webkit' ? 'webkit' : args.browser === 'android' ? 'android' : 'chromium';
+const OFFLINE_MODE = args['offline-mode'] || (ENGINE === 'webkit' ? 'server-down' : ENGINE === 'android' ? 'adb' : 'emulated');
 const OWN_PORT = Number(args.port || 4174);
 let server = null;
 if (OFFLINE_MODE === 'server-down') {
   server = spawn('npx', ['vite', 'preview', '--port', String(OWN_PORT), '--strictPort', '--host', '127.0.0.1'], { stdio: 'ignore' });
   await waitForPort(OWN_PORT, 30_000);
 }
-const URL = args.url || (OFFLINE_MODE === 'server-down' ? `http://127.0.0.1:${OWN_PORT}` : 'http://127.0.0.1:4173');
+const URL = args.url || (ENGINE === 'android' ? 'https://localhost' : OFFLINE_MODE === 'server-down' ? `http://127.0.0.1:${OWN_PORT}` : 'http://127.0.0.1:4173');
 const TASKS = String(args.tasks || args.task || 'hearts-and-flowers').split(',');
+const ADB = args.adb || 'adb';
+const APP_ID = 'org.levante.offlinelauncher';
 
 async function goOffline(context) {
   if (OFFLINE_MODE === 'server-down') {
     server.kill('SIGTERM');
     await new Promise((r) => setTimeout(r, 800));
+  } else if (OFFLINE_MODE === 'adb') {
+    execSync(`${ADB} shell svc wifi disable`);
+    execSync(`${ADB} shell svc data disable`);
+    await new Promise((r) => setTimeout(r, 1500));
   } else {
     await context.setOffline(true);
   }
@@ -49,6 +59,12 @@ async function goOffline(context) {
 async function goOnline(context) {
   if (OFFLINE_MODE === 'server-down') {
     // The app shell stays served by the service worker; only the emulator needs to be reachable.
+    return;
+  }
+  if (OFFLINE_MODE === 'adb') {
+    execSync(`${ADB} shell svc wifi enable`);
+    execSync(`${ADB} shell svc data enable`);
+    await new Promise((r) => setTimeout(r, 4000));
     return;
   }
   await context.setOffline(false);
@@ -81,24 +97,43 @@ await mkdir(OUT, { recursive: true });
 
 // --browser webkit runs the same proof on Playwright's WebKit build: not Safari on an iPad,
 // but the same engine family for service worker / Cache Storage / IndexedDB behaviour.
-const ENGINE = args.browser === 'webkit' ? 'webkit' : 'chromium';
-const browser =
-  ENGINE === 'webkit'
-    ? await webkit.launch({ headless: true })
-    : await chromium.launch({
-        headless: true,
-        // Synthetic clicks are not user gestures; core-tasks awaits AudioContext.resume() before
-        // advancing past its fullscreen gate, so let audio start without one.
-        args: ['--autoplay-policy=no-user-gesture-required'],
-      });
-console.log(`engine: ${ENGINE} ${browser.version()}`);
-const context = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'allow' });
-// core-tasks marks the correct AFC option with `.correct` when it thinks it runs under Cypress,
-// which lets the auto-player answer correctly when it finds one.
-await context.addInitScript(() => {
-  window.Cypress = true;
-});
-const page = await context.newPage();
+let browser;
+let context;
+let page;
+if (ENGINE === 'android') {
+  // Debug builds of the Capacitor app expose the WebView to Chrome DevTools. A WebView is
+  // not a full browser (connectOverCDP fails on browser-context management), so attach
+  // through Playwright's Android API, which talks to it over adb.
+  const [device] = await android.devices();
+  if (!device) throw new Error('no Android device or emulator visible to adb');
+  await device.shell(`am force-stop ${APP_ID}`);
+  await device.shell(`am start -n ${APP_ID}/.MainActivity`);
+  const webview = await device.webView({ pkg: APP_ID }, { timeout: 60_000 });
+  page = await webview.page();
+  context = page.context();
+  browser = { version: () => `${device.model()} WebView`, close: () => device.close() };
+  await context.addInitScript(() => {
+    window.Cypress = true;
+  });
+} else {
+  browser =
+    ENGINE === 'webkit'
+      ? await webkit.launch({ headless: true })
+      : await chromium.launch({
+          headless: true,
+          // Synthetic clicks are not user gestures; core-tasks awaits AudioContext.resume() before
+          // advancing past its fullscreen gate, so let audio start without one.
+          args: ['--autoplay-policy=no-user-gesture-required'],
+        });
+  context = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'allow' });
+  // core-tasks marks the correct AFC option with `.correct` when it thinks it runs under Cypress,
+  // which lets the auto-player answer correctly when it finds one.
+  await context.addInitScript(() => {
+    window.Cypress = true;
+  });
+  page = await context.newPage();
+}
+console.log(`engine: ${ENGINE} ${browser.version()}${ENGINE === 'android' ? ` (WebView at ${page.url()})` : ''}`);
 const failed = [];
 const requested = { online: 0, offline: 0 };
 let offline = false;
@@ -132,7 +167,11 @@ const idb = {
 // 1. Provision online.
 console.log(`1. provisioning at ${URL} as ${PROCTOR_EMAIL}…`);
 await page.goto(`${URL}/#/provision`, { waitUntil: 'load' });
-await page.waitForFunction(() => navigator.serviceWorker?.getRegistration().then((r) => !!r?.active), null, { timeout: 60_000 });
+// The shell needs its service worker before it can serve a pack from Cache Storage (browsers,
+// and the Android app); the iOS app serves packs from the filesystem and has none.
+if (await page.evaluate(() => 'serviceWorker' in navigator)) {
+  await page.waitForFunction(() => navigator.serviceWorker?.getRegistration().then((r) => !!r?.active), null, { timeout: 60_000 });
+}
 if (await page.$('input[name=pin]')) {
   await page.fill('input[name=pin]', PIN);
   await page.fill('input[name=pinConfirm]', PIN);
@@ -157,17 +196,24 @@ await page.click('button:has-text("Provision this device")');
 await page.waitForSelector('.notice:has-text("Provisioned")', { timeout: 15 * 60_000 });
 const provisionMsg = await page.evaluate(() => document.querySelector('.notice')?.textContent?.trim());
 console.log(`   ${provisionMsg} (${((Date.now() - t0p) / 1000).toFixed(0)}s)`);
-const cacheStats = await page.evaluate(async () => {
-  const cache = await caches.open('levante-packs');
-  const keys = await cache.keys();
-  let bytes = 0;
-  for (const key of keys) {
-    const res = await cache.match(key);
-    bytes += Number(res?.headers.get('content-length')) || 0;
-  }
-  return { entries: keys.length, bytes };
-});
-console.log(`   pack cache: ${cacheStats.entries} entries, ${(cacheStats.bytes / 1e6).toFixed(1)} MB by content-length; app precache active`);
+const cacheStats = await page
+  .evaluate(async () => {
+    const cache = await caches.open('levante-packs');
+    const keys = await cache.keys();
+    let bytes = 0;
+    for (const key of keys) {
+      const res = await cache.match(key);
+      bytes += Number(res?.headers.get('content-length')) || 0;
+    }
+    return { entries: keys.length, bytes };
+  })
+  .catch(() => null);
+if (cacheStats && cacheStats.entries > 0) {
+  console.log(`   pack cache: ${cacheStats.entries} entries, ${(cacheStats.bytes / 1e6).toFixed(1)} MB by content-length; app precache active`);
+} else {
+  const { packs: provisioned } = await idb.all();
+  console.log(`   pack storage: ${provisioned.map((p) => `${p.packId} ${p.status} ${p.filesDone} files ${(p.totalBytes / 1e6).toFixed(1)} MB on the app filesystem`).join('; ')}`);
+}
 await page.screenshot({ path: path.join(OUT, '1-provisioned.png') });
 
 // 2. Go offline and reload the app cold.

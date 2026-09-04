@@ -120,15 +120,18 @@ service workers; use a real browser.
   Either way core-tasks' `assetBaseUrl` needs no network.
 - **Packs are assembled from content-addressed bundles.** `pack-builder/build-bundles.mjs`
   turns the bucket into one index (`entries: [{name, contentType, offset, length, sha256}]`)
-  plus one uncompressed blob per unit — `task/<id>/<locale>` and `shared/<locale>` — and a
-  `catalog.json`; `bundleId` is a hash of the entries, so identical content has one id and
-  every run carries the id of the bundle it was played from (`offline.bundleId`). The
-  launcher streams each blob, slices it into per-file objects for the storage backend,
-  verifies every SHA-256, and resumes an interrupted download by HTTP Range from the first
-  entry it does not hold. Building is also where a battery gets validated: missing audio,
-  corpora or translations are warnings in the index (`--strict` fails the build). Without
-  `VITE_BUNDLE_BASE` the launcher falls back to listing the bucket folders and fetching
-  ~1,800 objects, which is what made WebKit take minutes.
+  plus the entries' bytes, uncompressed and cut into fixed 2 MB part files, per unit —
+  `task/<id>/<locale>` and `shared/<locale>` — and a `catalog.json`; `bundleId` is a hash
+  of the entries, so identical content has one id and every run carries the id of the
+  bundle it was played from (`offline.bundleId`). The launcher reads the parts in order
+  (streamed in a browser; one part in memory at a time under native HTTP), slices them into
+  per-file objects for the storage backend, verifies every SHA-256, and resumes an
+  interrupted download at the part holding the first entry it does not hold — plain GETs
+  only, no Range requests, so the production bucket's CORS needs nothing special. Building
+  is also where a battery gets validated: missing audio, corpora or translations are
+  warnings in the index (`--strict` fails the build). Without `VITE_BUNDLE_BASE` the
+  launcher falls back to listing the bucket folders and fetching ~1,800 objects, which is
+  what made WebKit take minutes.
 - **Child mode.** "Start child mode" on the roster hides the proctor controls (sync,
   provisioning, lock, PIDs/birth dates) and makes `#/sync` and `#/provision` route back to the
   roster; leaving it requires the device PIN, verified against the vault rather than the
@@ -163,29 +166,42 @@ service workers; use a real browser.
 | permissions-core in the callables | done (shared gate; legacy fallback) |
 | Data-contract checklist | documented in `CONTRACT.md`; validators not yet run |
 | iOS Safari (PWA) | verified on an iPad Air simulator, iOS 26.5: provision (~2 min), server killed, roster + task from the service-worker cache |
-| Capacitor iOS app | verified on the same simulator (Xcode 26.6): provision onto the app filesystem via native HTTP (<1 min), lock/unlock across relaunch, roster, task running from `convertFileSrc` URLs, and sync of the stored run through `syncOfflineRuns`. `shell/android/` is generated but unbuilt (no Android SDK here). Real hardware still untested |
+| Capacitor iOS app | verified on the same simulator (Xcode 26.6): provision onto the app filesystem via native HTTP (<1 min), lock/unlock across relaunch, roster, task running from `convertFileSrc` URLs, and sync of the stored run through `syncOfflineRuns`. Real hardware still untested |
+| Capacitor Android app | verified on a Pixel Tablet AVD: full loop (provision 266 MB in 47 s into Cache Storage, radios off, roster + task, child mode, sync) driven by `--browser android`. Real hardware still untested |
 | Trigger completion bug (upstream) | still open in `update-best-run-and-completion.ts` |
 | ROAR tasks, surveys, walk-up enrollment | out of scope |
 
-## Android (Capacitor) — status
+## Android (Capacitor) — verified on an emulator
 
-`shell/android/` is generated (`npx cap add android`). This Mac has Google's command-line
-tools (`brew install --cask android-commandlinetools android-platform-tools`; JDK from
-`/opt/homebrew/opt/openjdk`) but no SDK packages yet, because installing them means
-accepting Google's SDK licence — a person's step:
+Toolchain without Android Studio: `brew install --cask android-commandlinetools
+android-platform-tools`, `brew install openjdk@21` (Gradle 8.14 rejects JDK 26), then — the
+one step that needs a person, because it accepts Google's SDK licence:
 
 ```bash
-export JAVA_HOME=/opt/homebrew/opt/openjdk ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21 ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
 $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
-$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "emulator" "system-images;android-35;google_apis;arm64-v8a"
+$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "emulator" "system-images;android-35;google_apis;arm64-v8a"
 $ANDROID_HOME/cmdline-tools/latest/bin/avdmanager create avd -n levante-tablet -k "system-images;android-35;google_apis;arm64-v8a" -d pixel_tablet
 ```
 
-Then `cd shell && npm run build:emulator && npx cap sync android && cd android && ./gradlew assembleDebug`,
-boot the AVD with `$ANDROID_HOME/emulator/emulator -avd levante-tablet`, and
-`adb install app/build/outputs/apk/debug/app-debug.apk`. The Android WebView serves the
-shell from `https://localhost`, so both storage backends are viable there; the app uses the
-filesystem backend on every native platform for consistency with iOS.
+Build and run against the local emulator + bundle server (inside an AVD, `10.0.2.2` is the
+host; `.env.android` points there, `CAP_CLEARTEXT=1` allows plain HTTP and a debug-only
+manifest sets `usesCleartextTraffic`):
+
+```bash
+cd shell && echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+npm run build:android && CAP_CLEARTEXT=1 npx cap sync android && (cd android && ./gradlew assembleDebug)
+$ANDROID_HOME/emulator/emulator -avd levante-tablet -no-window -no-audio &     # or with a window
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+node test/offline-run.mjs --browser android --tasks hearts-and-flowers --scope Sunrise --proctor ra@levante.test:ra123456 --pin 2468
+```
+
+`--browser android` attaches Playwright to the app's WebView over adb (debug builds expose
+it), switches the AVD's radios off for the offline phase, and back on to sync. Storage
+backend on Android is **Cache Storage + service worker** (the origin is `https://localhost`),
+not the app filesystem as on iOS — see `RESULTS.md` for the two Capacitor-Android facts
+behind that (its HTTP interceptor fails non-zero Range requests, and its file server does not
+answer media requests), which also turned the bundle format into 2 MB part files.
 
 ## Findings for upstream (from running the whole battery offline)
 
@@ -206,10 +222,10 @@ filesystem backend on every native platform for consistency with iOS.
 - Bundles are per task, so audio prompts shared by several tasks are downloaded once per
   task that uses them (65 of 1,892 entries, 3.3 MB, for the three-task pack); the storage
   layer dedupes them. Moving multi-task audio into the shared unit would remove that.
-- Bundle downloads set a `Range` header on resume, which preflights; the production bucket's
-  CORS config must allow it (`responseHeader: [Range, …]`). The Capacitor path goes through
-  native HTTP, which buffers the whole blob (no body stream) — fine at 20 MB, to be
-  revisited for ToM-sized bundles (127 MB of unoptimized PNGs today).
+- Capacitor's Android HTTP interceptor fails any Range request that does not start at byte 0
+  (`net::ERR_FAILED`; observed with both 8 MB and 2 MB chunks, distinct URLs or not), which
+  is why bundles ship as part files instead of one blob. On native platforms each file is
+  written through the plugin bridge (base64), the slow part of provisioning there.
 - No size check against `navigator.storage.estimate()` before a download yet.
 - `window.__levanteStore` exposes the decrypting store for tests; strip for production.
 - The export JSON is plaintext by design (courier fallback); protect it operationally.

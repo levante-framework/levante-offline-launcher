@@ -4,6 +4,42 @@ Environment: macOS, Node 22, Playwright (Chromium 151 / WebKit 26.5), Firebase e
 (auth + firestore + functions) running the real `levante-admin` functions codebase plus the
 two new callables. core-tasks 1.3.17 + the `levante-in-a-box` asset commit.
 
+## Capacitor Android app — 2026-09-04 (Pixel Tablet AVD, API 36 image, arm64, headless)
+
+Toolchain from the command line only: Homebrew `android-commandlinetools` + `openjdk@21`
+(Gradle 8.14 does not run on JDK 26), `sdkmanager` packages after the licence step, an AVD
+created with `avdmanager`; `./gradlew assembleDebug` produced a 4.9 MB debug APK. The proof
+script drives the app's WebView through Playwright's Android API (`--browser android`; it
+does not accept `connectOverCDP`), goes offline by switching the AVD's radios off, and syncs
+after switching them back on.
+
+Two Android platform facts, each found by running it:
+
+1. **Capacitor's Android HTTP interceptor fails any Range request that does not start at
+   byte 0** (`net::ERR_FAILED`, four retries each; 8 MB or 2 MB chunks, same or distinct
+   URLs). Bundles therefore ship as fixed 2 MB **part files** and the launcher never sends a
+   Range header anywhere — which also frees the production bucket from needing a CORS
+   exception for it. Rebuilding the whole battery in the new format took 10 s from the
+   builder's object cache; bundle ids did not change (same content).
+2. **Capacitor's Android file server does not answer media requests for
+   `_capacitor_file_` URLs**: with the pack on the app filesystem (as on iOS), provisioning
+   worked (5,349 files / 266 MB in 85 s through the plugin bridge) and the task mounted, but
+   every audio file "did not begin loading" (`ERR_CONNECTION_REFUSED` — the request fell
+   through to the network). On Android the WebView origin is `https://localhost`, so the
+   service-worker + Cache Storage path is available; the app now uses it there and keeps the
+   filesystem backend for iOS.
+
+| Step | Outcome (Android WebView, Cache Storage backend) |
+|---|---|
+| Vault, sign-in as the RA, scopes, `provisionOfflinePack` | as in the browser (native HTTP to the host's emulator via 10.0.2.2) |
+| Provisioning | **5,349 files / 265.6 MB in 47 s** into Cache Storage through the service worker (5,295 entries after dedupe) |
+| Radios off, reload | roster rendered from the service-worker cache; status bar `native android · cache storage` |
+| hearts-and-flowers | mounted and played (6 trials in the 60 s budget); **134 requests, 1 failed — the app's own `icon.svg` favicon (`ERR_ABORTED`), nothing from the pack** |
+| Child mode | proctor links hidden, `#/sync` redirected, wrong PIN rejected, exit with the PIN |
+| Radios on, Sync page | **1 run synced, 0 failed**; clock offset 319 ms; `offlineDevices` row `platform=capacitor-android` |
+
+Not exercised on Android: a full playthrough, a real tablet, storage eviction over time.
+
 ## Full battery offline — 2026-09-04
 
 Seed extended to all eleven tasks in one administration (base params, no CAT except the

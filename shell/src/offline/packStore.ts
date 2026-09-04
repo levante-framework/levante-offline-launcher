@@ -10,10 +10,13 @@ import type { PackRecord } from './types';
 // service worker, or the app filesystem) is the storage backend's business — see storage.ts.
 //
 // Two sources:
-//   - bundles (VITE_BUNDLE_BASE set): one content-addressed index + blob per unit
-//     (`shared/<locale>`, `task/<id>/<locale>`), built by pack-builder/build-bundles.mjs.
-//     Streamed and sliced into per-file entries; resumable by HTTP Range from the first
-//     entry not yet stored; every entry's SHA-256 verified.
+//   - bundles (VITE_BUNDLE_BASE set): one content-addressed index per unit
+//     (`shared/<locale>`, `task/<id>/<locale>`) plus the entries' bytes as fixed-size part
+//     files, built by pack-builder/build-bundles.mjs. Parts are read in order and sliced
+//     into per-file objects — streamed where the platform exposes a body stream, one part
+//     in memory at a time where it does not (Capacitor's native HTTP) — every entry's
+//     SHA-256 verified; an interrupted download resumes at the part holding the first
+//     entry not yet stored. No Range requests anywhere.
 //   - listing (fallback): enumerate the bucket folders through the GCS JSON API and fetch
 //     every object — the original path, ~1,800 requests for three tasks.
 
@@ -44,6 +47,8 @@ interface BundleIndex {
   builtAt: string;
   bytes: number;
   files: number;
+  partBytes: number;
+  parts: number;
   corpora?: Record<string, { corpus: string; sha256: string }>;
   warnings?: string[];
   entries: BundleEntry[];
@@ -158,7 +163,7 @@ async function downloadFromBundles(pack: PackRecord, { id, progress, report }: S
   const bundles: NonNullable<PackRecord['bundles']> = {};
   const corpora: PackRecord['corpora'] = {};
   for (const index of indexes) {
-    await downloadBundle(id, `${BUNDLE_BASE}/${index.unit}/${index.bundleId}.bin`, index, progress, report);
+    await downloadBundle(id, index, progress, report, pack.filesDone > 0);
     bundles[index.unit] = { bundleId: index.bundleId, bytes: index.bytes, files: index.entries.length };
     Object.assign(corpora, index.corpora ?? {});
   }
@@ -193,13 +198,15 @@ async function downloadFromBundles(pack: PackRecord, { id, progress, report }: S
   return { corpora, bundles };
 }
 
-// Streams one bundle blob and stores each entry as its own object. Entries already present
-// are skipped; the request starts at the first missing entry's offset (HTTP Range), so an
-// interrupted download resumes where it stopped.
-async function downloadBundle(packId: string, url: string, index: BundleIndex, progress: DownloadProgress, report: () => void) {
+// Reads one bundle's parts in order and stores each entry as its own object. Entries already
+// present are skipped; the read starts at the part holding the first missing entry, so an
+// interrupted download resumes there.
+async function downloadBundle(packId: string, index: BundleIndex, progress: DownloadProgress, report: () => void, resume: boolean) {
   const entries = [...index.entries].sort((a, b) => a.offset - b.offset);
+  // Only a pack that already holds something needs the per-entry existence checks (each one
+  // is a native call on Capacitor); a fresh pack downloads everything.
   const missing: boolean[] = [];
-  for (const e of entries) missing.push(!(await packStorage.has(packId, e.name)));
+  for (const e of entries) missing.push(resume ? !(await packStorage.has(packId, e.name)) : true);
   const first = missing.indexOf(true);
   if (first < 0) {
     progress.filesDone += entries.length;
@@ -207,11 +214,12 @@ async function downloadBundle(packId: string, url: string, index: BundleIndex, p
     return;
   }
   progress.filesDone += first;
+
+  const partUrl = (p: number) => `${BUNDLE_BASE}/${index.unit}/${index.bundleId}.p${String(p).padStart(4, '0')}`;
   const start = entries[first].offset;
-  const res = await fetchWithRetry(url, 4, start > 0 ? { Range: `bytes=${start}-` } : undefined);
-  const reader = new ByteReader(res);
-  // A server that ignores Range answers 200 from byte 0.
-  if (res.status !== 206) await reader.take(start);
+  const firstPart = Math.floor(start / index.partBytes);
+  const reader = new ByteReader((i) => (firstPart + i < index.parts ? fetchWithRetry(partUrl(firstPart + i)) : null));
+  await reader.take(start - firstPart * index.partBytes);
 
   for (let k = first; k < entries.length; k++) {
     const e = entries[k];
@@ -233,17 +241,16 @@ async function downloadBundle(packId: string, url: string, index: BundleIndex, p
   report();
 }
 
-// Sequential byte reader over a Response: streams `body` when the platform exposes it and
-// falls back to the whole array buffer (CapacitorHttp's patched fetch has no body stream).
+// Sequential byte reader over a series of responses (the bundle's parts): streams a body
+// when the platform exposes one and otherwise holds one part in memory (CapacitorHttp's
+// patched fetch has no body stream — a part is 2 MB, so that is bounded).
 class ByteReader {
   private chunks: Uint8Array[] = [];
-  private reader: ReadableStreamDefaultReader<Uint8Array> | null;
-  private whole: Promise<ArrayBuffer> | null = null;
-  private wholeTaken = false;
+  private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  private next = 0;
+  private exhausted = false;
 
-  constructor(private readonly res: Response) {
-    this.reader = res.body?.getReader() ?? null;
-  }
+  constructor(private readonly open: (i: number) => Promise<Response> | null) {}
 
   async take(n: number): Promise<Uint8Array<ArrayBuffer>> {
     const out = new Uint8Array(new ArrayBuffer(n));
@@ -266,17 +273,29 @@ class ByteReader {
   }
 
   private async fill(): Promise<boolean> {
-    if (this.reader) {
-      const { value, done } = await this.reader.read();
-      if (done || !value) return false;
-      this.chunks.push(value);
-      return true;
+    for (;;) {
+      if (this.reader) {
+        const { value, done } = await this.reader.read();
+        if (!done && value) {
+          this.chunks.push(value);
+          return true;
+        }
+        this.reader = null;
+      }
+      if (this.exhausted) return false;
+      const pending = this.open(this.next++);
+      if (!pending) {
+        this.exhausted = true;
+        return false;
+      }
+      const res = await pending;
+      if (res.body) {
+        this.reader = res.body.getReader();
+      } else {
+        this.chunks.push(new Uint8Array(await res.arrayBuffer()));
+        return true;
+      }
     }
-    if (this.wholeTaken) return false;
-    this.wholeTaken = true;
-    this.whole ??= this.res.arrayBuffer();
-    this.chunks.push(new Uint8Array(await this.whole));
-    return true;
   }
 
   async close() {
@@ -390,11 +409,11 @@ async function fetchJson(url: string) {
   return (await fetchWithRetry(url)).json();
 }
 
-async function fetchWithRetry(url: string, tries = 4, headers?: Record<string, string>): Promise<Response> {
+async function fetchWithRetry(url: string, tries = 4): Promise<Response> {
   let lastErr: unknown;
   for (let i = 0; i < tries; i++) {
     try {
-      const res = await fetch(url, headers ? { headers } : undefined);
+      const res = await fetch(url);
       if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
       return res;
     } catch (err) {

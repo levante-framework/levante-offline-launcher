@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: the app talks plain HTTP to the host's Firebase emulator and bundle
+     server (10.0.2.2 from an AVD). Release builds keep Android's cleartext block. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:usesCleartextTraffic="true" />
+</manifest>

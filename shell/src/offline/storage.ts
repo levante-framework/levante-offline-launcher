@@ -119,7 +119,13 @@ const filesystemStorage: PackStorage = {
   },
 };
 
-export const packStorage: PackStorage = Capacitor.isNativePlatform() ? filesystemStorage : cacheStorage;
+// iOS: the WebView origin is a custom scheme (capacitor://), which the Cache API refuses, so
+// packs live on the app filesystem and are served by Capacitor's asset handler (which does
+// Range for media). Android: the origin is https://localhost, so the service worker + Cache
+// Storage path works exactly as in a browser — and Capacitor's Android file server does not
+// answer media (Range) requests for _capacitor_file_ URLs, so the filesystem path is not an
+// option there anyway.
+export const packStorage: PackStorage = Capacitor.getPlatform() === 'ios' ? filesystemStorage : cacheStorage;
 
 export function platformLabel() {
   return `${Capacitor.isNativePlatform() ? `native ${Capacitor.getPlatform()}` : 'browser'} · ${packStorage.kind} storage`;
