@@ -57,6 +57,16 @@ const TASKS = [
   { taskId: 'theory-of-mind', params: { taskName: 'theory-of-mind', language: LOCALE, storeItemId: true, corpus: 'theory-of-mind-no-ha-item-bank' } },
 ];
 
+const SEED_TASK_IDS = String(process.env.SEED_TASKS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+if (SEED_TASK_IDS.length) {
+  const unknown = SEED_TASK_IDS.filter((id) => !TASKS.some((t) => t.taskId === id));
+  if (unknown.length) throw new Error(`Unknown SEED_TASKS: ${unknown.join(', ')}`);
+  TASKS.splice(0, TASKS.length, ...TASKS.filter((t) => SEED_TASK_IDS.includes(t.taskId)));
+}
+
 const app = admin.initializeApp({ projectId: PROJECT_ID });
 const auth = admin.auth(app);
 const db = admin.firestore(app);
