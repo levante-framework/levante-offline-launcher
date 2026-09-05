@@ -4,6 +4,8 @@
 // sync — through the Identity Toolkit REST API (no Firebase SDK needed). Callables use
 // the callable wire protocol: POST { data } → { result } | { error }.
 
+import { clearProctor, logError, logInfo, setProctor } from './sentry';
+
 const FUNCTIONS_BASE = (import.meta.env.VITE_FUNCTIONS_BASE as string | undefined)?.replace(/\/+$/, '');
 const SIGNIN_ENDPOINT = import.meta.env.VITE_AUTH_SIGNIN_URL as string | undefined;
 const SESSION_KEY = 'levante-offline:proctor';
@@ -22,7 +24,9 @@ export function getSession(): ProctorSession | null {
     const raw = sessionStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const session = JSON.parse(raw) as ProctorSession;
-    return session.expiresAtMs > Date.now() + 30_000 ? session : null;
+    if (session.expiresAtMs <= Date.now() + 30_000) return null;
+    setProctor(session.uid);
+    return session;
   } catch {
     return null;
   }
@@ -30,32 +34,40 @@ export function getSession(): ProctorSession | null {
 
 export function signOut() {
   sessionStorage.removeItem(SESSION_KEY);
+  clearProctor();
 }
 
 export async function signIn(email: string, password: string): Promise<ProctorSession> {
   if (!SIGNIN_ENDPOINT) throw new Error('This build has no backend configured (VITE_AUTH_SIGNIN_URL).');
-  const res = await fetch(SIGNIN_ENDPOINT, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email, password, returnSecureToken: true }),
-  });
-  const body = (await res.json().catch(() => ({}))) as {
-    idToken?: string;
-    localId?: string;
-    expiresIn?: string;
-    error?: { message?: string };
-  };
-  if (!res.ok || !body.idToken || !body.localId) {
-    throw new Error(`Sign-in failed: ${body.error?.message ?? res.status}`);
+  try {
+    const res = await fetch(SIGNIN_ENDPOINT, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password, returnSecureToken: true }),
+    });
+    const body = (await res.json().catch(() => ({}))) as {
+      idToken?: string;
+      localId?: string;
+      expiresIn?: string;
+      error?: { message?: string };
+    };
+    if (!res.ok || !body.idToken || !body.localId) {
+      throw new Error(`Sign-in failed: ${body.error?.message ?? res.status}`);
+    }
+    const session: ProctorSession = {
+      email,
+      uid: body.localId,
+      idToken: body.idToken,
+      expiresAtMs: Date.now() + Number(body.expiresIn ?? 3600) * 1000,
+    };
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    setProctor(session.uid);
+    logInfo('proctor signed in');
+    return session;
+  } catch (err) {
+    logError('proctor sign-in failed', err);
+    throw err;
   }
-  const session: ProctorSession = {
-    email,
-    uid: body.localId,
-    idToken: body.idToken,
-    expiresAtMs: Date.now() + Number(body.expiresIn ?? 3600) * 1000,
-  };
-  sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  return session;
 }
 
 export async function callFunction<T>(name: string, data: unknown): Promise<T> {

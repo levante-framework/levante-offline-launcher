@@ -9,7 +9,8 @@ reuses the platform's existing completion trigger.
 
 Background and the full feasibility assessment: the "Offline LEVANTE" report
 (claude.ai artifact) and `~/Projects/LEVANTE.md` → *Delivery infrastructure*.
-Numbers from the last verified run: `RESULTS.md`. Firestore field changes: `CONTRACT.md`.
+Numbers from the last verified run: `RESULTS.md`. BrowserStack devices: `RESULTS-browserstack.md`.
+Firestore field changes: `CONTRACT.md`.
 
 ## The loop
 
@@ -23,12 +24,16 @@ progress, variant params          OfflineAppkit → sealed IndexedDB    syncOnRu
 asset pack → Cache Storage        every trial appended in order       offlineDevices/{id} updated
 ```
 
-The proctor can be a `research_assistant`: both callables gate on permissions the RA role
+The proctor can be a `research_assistant`: the callables gate on permissions the RA role
 already holds (`assignments:read`; sync also `users:read`). A device is provisioned for one
 school or one cohort of the administration; the roster is those children who hold an
 assignment for it, each with their per-task progress as of provisioning, so a child assessed
 on another device (or online) shows as done. Every provision and sync is recorded in
 `offlineDevices/{deviceId}` — the beginnings of a fleet view.
+
+The launcher **never creates** a site, school, cohort, child, or administration. It only
+reads what the dashboard (or a seed/script) already wrote, then writes runs. On a real
+project those objects come from `upsertOrg`, `createUsers`, and `upsertAdministration`.
 
 ## Layout
 
@@ -36,6 +41,8 @@ on another device (or online) shows as done. Every provision and sync is recorde
 core-tasks/        git submodule → levante-framework/core-tasks @ spike/offline-assetbase
                    = main + cherry-pick of levante-in-a-box (setAssetBaseUrl + static manifests)
 functions-repo/    git submodule → levante-firebase-functions @ spike/sync-offline-runs
+                   (emulator). The same three callables are on `hs-levante-admin-dev`
+                   (ported onto functions `main` — do not deploy this spike snapshot wholesale).
                      src/administrations/list-offline-scopes.ts       schools/cohorts a device can be scoped to
                      src/administrations/provision-offline-pack.ts   roster (scoped) + progress + params
                      src/runs/sync-offline-runs.ts                    ingest one run + trials, idempotent
@@ -69,7 +76,7 @@ cd levante-offline-launcher
 # 1. core-tasks library with the asset indirection
 cd core-tasks/task-launcher && CYPRESS_INSTALL_BINARY=0 HUSKY=0 npm install && npm run package
 
-# 2. functions with the two new callables
+# 2. functions with the three offline callables (emulator copy)
 cd ../../functions-repo/functions/levante-admin && npm install && npm run build
 
 # 3. emulator (terminal A) + seed
@@ -82,7 +89,7 @@ cd ../emulator && npm run bundles               # terminal C — http://127.0.0.
 
 # 4. the launcher against the emulator
 cd ../shell && npm install --ignore-scripts && npx playwright install chromium webkit
-npm run build:emulator && npm run preview        # http://127.0.0.1:4173
+npm run build:emulator && npm run preview        # http://127.0.0.1:4173 (HTTP; HTTPS is PREVIEW_HTTPS=1)
 
 # 5. the proof (as the research assistant, device scoped to the school)
 node test/offline-run.mjs --tasks hearts-and-flowers,egma-math --pin 2468 --proctor ra@levante.test:ra123456 --scope Sunrise
@@ -95,15 +102,56 @@ By hand, in Chrome or Safari: open the app → Provision → set a PIN, sign in 
 (research assistant), load administrations, pick "Offline spike", pick "Sunrise Primary"
 (school: Ada, Blaise) or "Pilot cohort A" (cohort: Blaise, Carla), Provision → back to
 Roster → turn Wi‑Fi off → play → Wi‑Fi on → Sync. The in-app Claude browser pane blocks
-service workers; use a real browser.
+service workers; use a real browser. Routes are hash paths (`#/`, `#/provision`, `#/sync`)
+— do not rewrite them.
+
+## Against `hs-levante-admin-dev`
+
+The three callables are live on that project (`us-central1`, codebase `levante-admin`).
+`shell/.env.dev` points Auth and Functions there; assets still come from the public
+`levante-assets-prod` bucket. Sentry (`offline-launcher` in the levante-framework org)
+gets errors plus lifecycle logs (boot, sign-in, provision, task, sync). No session
+replay — this shell sits in front of children. Rebuild after changing `VITE_SENTRY_DSN`.
+Set `SENTRY_AUTH_TOKEN` when building so hidden source maps upload to that project
+and are stripped from `dist` (readable stacks; maps never ship to the tablet).
+
+```bash
+cd shell
+npm run build:dev && npm run preview        # http://127.0.0.1:4173
+```
+
+Sign in with a **dashboard-dev** site admin or research assistant — not
+`ra@levante.test`. Pick a real administration and a school or cohort. `VITE_BUNDLE_BASE`
+is empty in this mode, so provision lists GCS (~1,800 requests) instead of the local
+bundle server.
+
+levante-support can mint disposable site-admin / RA accounts (`reset-site`,
+`create-permissions-users`). Its `setup-qa-site` fixture is a walk-up participant on
+the whole site (no school); that is not the field shape. Field data is: site → school
+(or cohort) → `createUsers` children → `upsertAdministration` assigned to that org.
+
+Birth month/year on the user doc must be integers (`createUsers` writes `birthMonth` /
+`birthYear` from levante-zod `month` / `year`, 1–12 and a four-digit year, required and
+under 18 for children). The pack callable also coerces numeric strings so older QA docs
+still provision; the launcher will not start a child if either is missing after that.
+
+To redeploy **only** these functions from `levante-firebase-functions/functions/levante-admin`
+(never omit `--project dev` or the `levante-admin:` codebase prefix):
+
+```bash
+firebase --project dev deploy --only functions:levante-admin:provisionOfflinePack,functions:levante-admin:syncOfflineRuns,functions:levante-admin:listOfflineScopes
+```
 
 ## Design notes
 
 - **Identity never moves.** Children come only from existing user documents
-  (`provisionOfflinePack`), attributed by uid; the launcher refuses to run a child without
-  birth month/year. The proctor authenticates only for provisioning and sync; the callables
-  gate on permissions-core (`assignments:read` to list scopes and provision; `assignments:read`
-  + `users:read` to sync — the research-assistant baseline) with a legacy `adminOrgs` fallback.
+  (`provisionOfflinePack`), attributed by uid. Birth fields are integers (`birthMonth` 1–12,
+  `birthYear` four digits); the callable coerces numeric strings the way levante-zod does
+  for `month`/`year`. The launcher refuses to run a child if either is missing. The proctor
+  authenticates only for provisioning and sync (Identity Toolkit REST + `POST { data }`
+  callables; no Firebase client SDK). The callables gate on permissions-core
+  (`assignments:read` to list scopes and provision; `assignments:read` + `users:read` to
+  sync — the research-assistant baseline) with a legacy `adminOrgs` fallback.
 - **A device serves one school or cohort.** `listOfflineScopes` offers the administration's
   schools and cohorts; the pack id includes the scope; the roster is the scope's children who
   hold the assignment, each with `progress` per task as of provisioning. The roster merges
@@ -157,7 +205,7 @@ service workers; use a real browser.
 
 | Item | State |
 |---|---|
-| Provisioning from a real administration | done (callable + UI + resumable download); scoped to a school/cohort, with per-child progress and an `offlineDevices` registry |
+| Provisioning from a real administration | done (callable + UI + resumable download); scoped to a school/cohort, with per-child progress and an `offlineDevices` registry. Callables are on `hs-levante-admin-dev`; `npm run build:dev` points the shell at them |
 | Research-assistant proctor | done: the full loop verified as `research_assistant` (no new role) |
 | Bundled packs | done: `build-bundles.mjs` + streaming/resumable download; WebKit provisioning 47 s → 1 s |
 | Child (kiosk) mode | done: proctor controls and routes gated behind the PIN; exercised by the e2e |
@@ -210,8 +258,10 @@ should be a person with real devices, in this order:
 
 1. **Reproduce the proof on a second machine** (README quick start, both engines). If the
    setup instructions fail, that is the first bug.
-2. **Deploy the three callables to `hs-levante-admin-dev`** and point a build at it
-   (`.env.dev`); until then everything runs against the emulator seed, which is not real data.
+2. **Point a build at `hs-levante-admin-dev`** (`npm run build:dev && npm run preview`).
+   Sign in with a dashboard-dev site admin or research assistant and provision a real
+   administration (school- or cohort-scoped children with integer birth dates). The
+   emulator seed is not real data. See *Against hs-levante-admin-dev* above.
 3. **Real devices, one of each:** an iPad (TestFlight or a dev-signed build) and the cheapest
    Android tablet the field will actually buy (sideloaded APK). Provision a real dev-project
    administration scoped to one school; check the roster and per-child progress against the

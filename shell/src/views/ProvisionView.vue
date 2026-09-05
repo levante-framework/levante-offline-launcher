@@ -145,6 +145,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { backendConfigured, callFunction, getSession, type ProctorSession, signIn, signOut } from '../offline/auth';
+import { logError, logInfo } from '../offline/sentry';
 import { listPacks, putPack } from '../offline/db';
 import { deviceInfo } from '../offline/device';
 import { deletePack, type DownloadProgress, downloadPack, getActivePackId, markPackError, setActivePackId } from '../offline/packStore';
@@ -276,6 +277,7 @@ async function loadAdministrations() {
     if (!administrations.value.length) message.value = 'No open administrations are visible to this account.';
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
+    logError('getAdministrations failed', err);
   } finally {
     busy.value = false;
   }
@@ -294,6 +296,7 @@ async function selectAdministration(id: string) {
     scopesLoaded.value = true;
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
+    logError('listOfflineScopes failed', err, { administrationId: id });
   } finally {
     scopesLoading.value = false;
   }
@@ -328,11 +331,25 @@ async function provision() {
     };
     await putPack(record);
     await refreshPacks();
+    logInfo('provision download started', {
+      packId: p.packId,
+      administrationId: p.administrationId,
+      children: p.children.length,
+      tasks: p.tasks.length,
+    });
     const done = await downloadPack(record, (prog) => (progress.value = prog));
     setActivePackId(done.packId);
+    logInfo('provisioned', {
+      packId: done.packId,
+      administrationId: done.administrationId,
+      children: done.children.length,
+      tasks: done.tasks.length,
+      files: done.fileCount,
+    });
     message.value = `Provisioned "${done.name}" for ${scopeLabel(done)}: ${done.children.length} children, ${done.tasks.length} tasks, ${done.fileCount} files (${(done.totalBytes / 1e6).toFixed(1)} MB). This device can now assess offline.`;
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
+    logError('provision failed', err, { administrationId: selectedId.value ?? '', packId: packId ?? '' });
     if (packId) await markPackError(packId, err);
   } finally {
     busy.value = false;
