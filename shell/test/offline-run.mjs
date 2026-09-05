@@ -123,9 +123,9 @@ if (ENGINE === 'android') {
           headless: true,
           // Synthetic clicks are not user gestures; core-tasks awaits AudioContext.resume() before
           // advancing past its fullscreen gate, so let audio start without one.
-          args: ['--autoplay-policy=no-user-gesture-required'],
+          args: ['--autoplay-policy=no-user-gesture-required', '--ignore-certificate-errors'],
         });
-  context = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'allow' });
+  context = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'allow', ignoreHTTPSErrors: true });
   // core-tasks marks the correct AFC option with `.correct` when it thinks it runs under Cypress,
   // which lets the auto-player answer correctly when it finds one.
   await context.addInitScript(() => {
