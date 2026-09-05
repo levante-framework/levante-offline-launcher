@@ -276,7 +276,9 @@ async function clickText(page, pattern) {
     const re = new RegExp(p, 'i');
     const el = [...document.querySelectorAll('button, a, [role=button]')].find((e) => re.test((e.textContent || '').replace(/\s+/g, ' ')));
     if (!el) return false;
-    el.click();
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+    el.dispatchEvent(new Event('touchend', { bubbles: true, cancelable: true }));
+    if (typeof el.click === 'function') el.click();
     return true;
   }, pattern);
   if (!ok) throw new Error(`no clickable text matching /${pattern}/`);
@@ -517,6 +519,7 @@ try {
     record(`task-mount:${task}`, 'pass');
     await page.waitForTimeout(1200);
     await page.screenshot({ path: path.join(OUT, `3-${task}-start.png`) });
+    await clickText(page, 'OK|Continue').catch(() => {});
 
     const t0 = Date.now();
     let clicks = 0;
@@ -525,21 +528,19 @@ try {
     while (Date.now() - t0 < MAX_SECONDS * 1000) {
       const backOnRoster = await page.evaluate(() => (location.hash === '' || location.hash === '#/') && !document.querySelector('.jspsych-content-wrapper'));
       if (backOnRoster) break;
-      let clicked = false;
-      for (const sel of CLICK_SELECTORS) {
-        const loc = page.locator(sel);
-        const n = await loc.count().catch(() => 0);
-        if (!n) continue;
-        const idx = sel.startsWith('.correct') ? 0 : Math.floor(Math.random() * n);
-        try {
-          await loc.nth(idx).click({ timeout: 1500, force: true });
-          clicked = true;
-          clicks++;
-          break;
-        } catch {
-          /* vanished */
+      const clickedSel = await page.evaluate((sels) => {
+        const visible = (el) => el instanceof HTMLElement && el.offsetParent !== null && getComputedStyle(el).visibility !== 'hidden';
+        for (const sel of sels) {
+          const nodes = [...document.querySelectorAll(sel.replace(/:visible/g, ''))].filter(visible);
+          if (!nodes.length) continue;
+          const el = sel.includes('correct') ? nodes[0] : nodes[Math.floor(Math.random() * nodes.length)];
+          el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+          if (typeof el.click === 'function') el.click();
+          return sel;
         }
-      }
+        return null;
+      }, CLICK_SELECTORS);
+      if (clickedSel) clicks++;
       if (clicks % 10 === 0) {
         const { trials } = await idb.all();
         if (trials.length !== lastTrials) {
@@ -549,13 +550,22 @@ try {
           break;
         }
       }
-      await page.waitForTimeout(clicked ? 700 : 400);
+      await page.waitForTimeout(clickedSel ? 700 : 400);
     }
     record(`task-play:${task}`, clicks > 0 ? 'pass' : 'fail', `${clicks} clicks`);
     if (!(await page.evaluate(() => location.hash === '' || location.hash === '#/'))) {
-      await page.goto(`${URL}/#/`, { waitUntil: 'load', timeout: 60_000 });
+      await page.evaluate(() => {
+        location.hash = '#/';
+      });
+      await page.reload({ waitUntil: 'load', timeout: 60_000 }).catch(() => {});
     }
-    await waitForText(page, 'Who is playing', 45_000);
+    try {
+      await waitForText(page, 'Who is playing', 45_000);
+    } catch (e) {
+      await dumpPage(page, 'after-task-roster');
+      await page.screenshot({ path: path.join(OUT, `3-${task}-after.png`) }).catch(() => {});
+      throw e;
+    }
   }
 
   const raw = await idb.raw();
@@ -576,7 +586,7 @@ try {
   console.log('   runs:', JSON.stringify(summary));
 
   await page.goto(`${URL}/#/`, { waitUntil: 'load', timeout: 60_000 });
-  await page.waitForSelector('.child .progress', { timeout: 30_000 });
+  await waitForText(page, 'Who is playing', 30_000);
   const rosterProgress = await page.$$eval('.child', (els) =>
     els.map((el) => `${el.querySelector('strong')?.textContent?.trim()}: ${el.querySelector('.progress')?.textContent?.trim()}`),
   );

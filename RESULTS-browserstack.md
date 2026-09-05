@@ -40,16 +40,18 @@ Safari 26.3 (Playwright-iOS bridge); Automate API listed `device=iPad Air 11 202
 |---|---|
 | Playwright CDP connect | pass |
 | HTTPS Local + `bs-local.com` (Vite `allowedHosts` + preview proxy) | required — HTTP `bs-local.com` is **not** a secure context (no SW / no `navigator.storage`); Vite 6 also 403s unknown hosts |
-| `navigator.storage.estimate()` before pack | **pass** — `usage=1_076_092` (~1.0 MB app shell), `quota=41_231_686_042` (~38.4 GiB). API exists on real Safari. The launcher still does not consult it before download (known gap). |
-| `navigator.storage.persist()` | **fail (product-relevant)** — returned `false`; `persisted()` stayed `false`. No prompt was observed. Real Safari persistence heuristics did **not** grant durable storage. Simulators must not be trusted for this. |
+| `navigator.storage.estimate()` before pack | **pass** — `usage≈1.08 MB` app shell → `≈4.5 MB` after pack; `quota≈38.4 GiB` |
+| `navigator.storage.persist()` | **fail (product-relevant)** — returned `false`; `persisted()` stayed `false`. No prompt. Real Safari did not grant durable storage. |
 | Service worker | pass — active on the HTTPS origin |
 | Device PIN vault | pass |
-| Sign-in `ra@levante.test` | pass (Identity Toolkit via Vite `/auth-emu` proxy) |
-| `provisionOfflinePack` (emulator) | **callable succeeded** — `school:Sunrise Primary`, 2 children, **11 tasks**, `deviceId=dev_c002df66-…` (emulator log) |
-| Pack download → UI “Provisioned” | **fail / timeout** — 15 min; seed administration is the full 11-task battery (~266 MB). Hearts-and-flowers-only bundles were built; the other ten units were not on `:4175`, so the client could not finish. |
-| Idle eviction after pack | not run (no completed pack) |
-| Offline roster / hearts-and-flowers / sync / `inspect.mjs` | not run |
-| IndexedDB write errors | none in console during the steps that ran |
+| Sign-in `ra@levante.test` | pass |
+| Pack download → UI “Provisioned” | **pass** — one-task seed (`SEED_TASKS=hearts-and-flowers`): 2 children, **1 task**, 105 files, 3.4 MB in **5–15 s** |
+| Idle eviction (15–90 s) | no drop (`4.5 MB → 4.5 MB`). Not a 7-day Safari test |
+| Offline roster (`local-down`) | **pass** — “Who is playing” + Ada/Blaise after Local stop + reload |
+| hearts-and-flowers mount (offline) | **pass** — jsPsych loaded from the pack |
+| hearts-and-flowers play / trials | **fail (harness)** — run started, **0 trials**. H&F ignores untrusted clicks (`touchResponseRouting.js`); Playwright-iOS `el.click()` is not a user gesture. Fullscreen OK also logs “no transient activation.” A child tapping should still work |
+| Sync / `inspect.mjs` | not reached (selector strict-mode abort on `.child .progress`) |
+| IndexedDB write errors | none |
 
 Deviations from the iPad Air **simulator** (`RESULTS.md`):
 
@@ -99,6 +101,11 @@ node test/offline-run-browserstack.mjs --device ios \
   --proctor ra@levante.test:ra123456 --scope Sunrise --tasks hearts-and-flowers
 ```
 
-To finish the pack step: seed (or point at) a **one-task** administration, or
-build the full battery (`pack-builder/build-bundles.mjs --tasks …` all eleven)
-before preview. 266 MB through Local on a real iPad exceeded 15 minutes here.
+One-task seed (required for this pack):
+
+```bash
+cd emulator && SEED_TASKS=hearts-and-flowers npm run seed
+```
+
+Full 11-task battery (~266 MB) through Local previously exceeded 15 minutes
+because only hearts-and-flowers bundles were on `:4175`.
