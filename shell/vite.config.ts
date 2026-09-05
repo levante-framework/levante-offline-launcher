@@ -60,12 +60,16 @@ export default defineConfig({
   preview: {
     host: true,
     allowedHosts: true,
-    https: existsSync('/tmp/levante-offline-certs/key.pem')
+    ...(process.env.PREVIEW_HTTPS === '1'
       ? {
-          key: readFileSync('/tmp/levante-offline-certs/key.pem'),
-          cert: readFileSync('/tmp/levante-offline-certs/cert.pem'),
+          https: existsSync('/tmp/levante-offline-certs/key.pem')
+            ? {
+                key: readFileSync('/tmp/levante-offline-certs/key.pem'),
+                cert: readFileSync('/tmp/levante-offline-certs/cert.pem'),
+              }
+            : true,
         }
-      : true,
+      : {}),
     proxy: {
       '/fn': { target: 'http://127.0.0.1:5002', changeOrigin: true, rewrite: (p) => p.replace(/^\/fn/, '') },
       '/auth-emu': { target: 'http://127.0.0.1:9199', changeOrigin: true, rewrite: (p) => p.replace(/^\/auth-emu/, '') },

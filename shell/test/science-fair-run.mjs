@@ -1,7 +1,7 @@
 // science_fair: provision 10 test children × 2 tasks, play them offline, sync, assert Firestore.
 //
 //   cd emulator && npm run seed:science-fair
-//   cd shell && node test/science-fair-run.mjs [--url https://127.0.0.1:4173]
+//   cd shell && node test/science-fair-run.mjs [--url http://127.0.0.1:4173]
 
 import { spawnSync } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
@@ -16,7 +16,7 @@ const args = Object.fromEntries(
   }, []),
 );
 
-const APP_URL = args.url || 'https://127.0.0.1:4173';
+const APP_URL = args.url || 'http://127.0.0.1:4173';
 const TASKS = String(args.tasks || 'hearts-and-flowers,intro').split(',');
 const PIDS = String(args.children || 'TEST-01,TEST-02,TEST-03,TEST-04,TEST-05,TEST-06,TEST-07,TEST-08,TEST-09,TEST-10').split(',');
 const ADMINISTRATION = args.administration || 'Science fair';

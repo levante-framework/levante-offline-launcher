@@ -8,7 +8,7 @@
     "build": "vite build",
     "build:emulator": "vite build --mode emulator",
     "build:browserstack": "vite build --mode browserstack",
-    "preview:browserstack": "vite preview --port 4173 --host",
+    "preview:browserstack": "PREVIEW_HTTPS=1 vite preview --port 4173 --host",
     "test:offline": "node test/offline-run.mjs",
     "test:science-fair": "node test/science-fair-run.mjs",
     "test:offline:browserstack": "node test/offline-run-browserstack.mjs",
