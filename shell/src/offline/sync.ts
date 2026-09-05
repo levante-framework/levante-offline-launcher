@@ -1,6 +1,7 @@
 import { callFunction } from './auth';
 import { getTrials, listRuns, updateRun } from './db';
 import { deviceInfo } from './device';
+import { logError, logInfo } from './sentry';
 
 // Sync phase: each pending run is posted to the `syncOfflineRuns` callable as the
 // signed-in proctor. Runs are independent, so one failure never blocks the others.
@@ -33,8 +34,10 @@ export async function syncPendingRuns(): Promise<SyncResult> {
       synced++;
     } catch (err) {
       failed++;
+      logError('sync run failed', err, { taskId: run.taskId, packId: run.packId });
       await updateRun(run.runId, { syncState: 'error', syncError: err instanceof Error ? err.message : String(err) });
     }
   }
+  logInfo('sync finished', { synced, failed, pending: runs.length });
   return { synced, failed, clockOffsetMs };
 }

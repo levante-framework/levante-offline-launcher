@@ -16,6 +16,7 @@ import { getDeviceId, getSelectedChildId } from '../offline/device';
 import { OfflineAppkit } from '../offline/OfflineAppkit';
 import { loadPack } from '../offline/pack';
 import { assetBaseFor } from '../offline/packStore';
+import { logError, logInfo } from '../offline/sentry';
 
 const props = defineProps<{ taskId: string }>();
 const error = ref('');
@@ -75,14 +76,17 @@ onMounted(async () => {
       }
     }, 100);
 
+    logInfo('task start', { taskId: props.taskId, packId: pack.packId });
     const { TaskLauncher } = await import('@levante-framework/core-tasks');
     const launcher = new TaskLauncher(appkit, variantParams, userParams);
     await launcher.run();
     clearInterval(poll);
+    logInfo('task finished', { taskId: props.taskId, packId: pack.packId });
     goHome();
   } catch (err) {
     console.error(err);
     error.value = err instanceof Error ? err.message : String(err);
+    logError('task failed', err, { taskId: props.taskId });
   }
 });
 </script>
