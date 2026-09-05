@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "build:emulator": "vite build --mode emulator",
+    "build:browserstack": "vite build --mode browserstack",
+    "preview:browserstack": "vite preview --port 4173 --host",
     "test:offline": "node test/offline-run.mjs",
+    "test:offline:browserstack": "node test/offline-run-browserstack.mjs",
     "preview": "vite preview --port 4173 --host",
     "typecheck": "vue-tsc --noEmit",
     "build:android": "vite build --mode android"
@@ -22,6 +25,7 @@
     "vue": "^3.5.13"
   },
   "devDependencies": {
+    "browserstack-local": "^1.5.8",
     "@capacitor/cli": "^8.5.1",
     "@vitejs/plugin-vue": "^5.2.1",
     "playwright": "^1.62.1",

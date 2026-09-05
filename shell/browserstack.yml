@@ -1,0 +1,14 @@
+# Device matrix for shell/test/offline-run-browserstack.mjs (Playwright CDP, not the SDK runner).
+# Automate (web) real-device cloud — PWA path only. Capacitor .ipa/.apk needs App Automate.
+userName: BROWSERSTACK_USERNAME
+accessKey: BROWSERSTACK_ACCESS_KEY
+projectName: levante-offline-launcher
+buildName: offline-pwa
+browserstackLocal: true
+platforms:
+  - deviceName: iPad Air 11 2026
+    osVersion: "26"
+    browserName: safari
+  - deviceName: Samsung Galaxy Tab S11
+    osVersion: "16.0"
+    browserName: chrome
