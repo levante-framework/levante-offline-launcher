@@ -86,7 +86,7 @@ async function main() {
     const warnings = [];
     const items = [
       ...(await listPrefix('audio/shared/')),
-      ...(await listPrefix('visual/shared/')),
+      ...preferWebpImages(await listPrefix('visual/shared/')),
       ...pickAudio(apt.shared?.audio ?? [], localeAudioByBase, 'shared', warnings),
     ];
     const extras = [`translations/itembank/general/${locale}/item-bank-translations.json`, 'audio/assets-per-task.json'];
@@ -98,7 +98,7 @@ async function main() {
   for (const taskId of tasks) {
     const unit = `task/${taskId}/${locale}`;
     const warnings = [];
-    const items = [...(await listPrefix(`visual/${taskId}/`)), ...pickAudio(apt[taskId]?.audio ?? [], localeAudioByBase, taskId, warnings)];
+    const items = [...preferWebpImages(await listPrefix(`visual/${taskId}/`)), ...pickAudio(apt[taskId]?.audio ?? [], localeAudioByBase, taskId, warnings)];
     if (!apt[taskId]) warnings.push(`no entry for ${taskId} in audio/assets-per-task.json`);
     const extras = translationTasksFor(taskId).map((t) => `translations/itembank/${t}/${locale}/item-bank-translations.json`);
     const corpora = {};
@@ -185,6 +185,15 @@ async function buildBundle(unit, items, extras, corpora, warnings) {
 
 // The audio files a task needs, resolved against the locale folder; missing ones are warnings
 // (a task whose prompts are not recorded in this locale is exactly what CI should flag).
+function preferWebpImages(items) {
+  const webpStems = new Set();
+  for (const it of items) {
+    if (/\.webp$/i.test(it.name)) webpStems.add(it.name.replace(/\.webp$/i, ''));
+  }
+  if (!webpStems.size) return items;
+  return items.filter((it) => !/\.(png|jpe?g)$/i.test(it.name) || !webpStems.has(it.name.replace(/\.(png|jpe?g)$/i, '')));
+}
+
 function pickAudio(names, byBase, owner, warnings) {
   const picked = [];
   for (const name of names) {

@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process';
+import { readFileSync, existsSync } from 'node:fs';
 import vue from '@vitejs/plugin-vue';
 import { defineConfig } from 'vite';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
@@ -55,5 +56,24 @@ export default defineConfig({
   server: {
     host: true,
     fs: { allow: ['..'] },
+  },
+  preview: {
+    host: true,
+    allowedHosts: true,
+    ...(process.env.PREVIEW_HTTPS === '1'
+      ? {
+          https: existsSync('/tmp/levante-offline-certs/key.pem')
+            ? {
+                key: readFileSync('/tmp/levante-offline-certs/key.pem'),
+                cert: readFileSync('/tmp/levante-offline-certs/cert.pem'),
+              }
+            : true,
+        }
+      : {}),
+    proxy: {
+      '/fn': { target: 'http://127.0.0.1:5002', changeOrigin: true, rewrite: (p) => p.replace(/^\/fn/, '') },
+      '/auth-emu': { target: 'http://127.0.0.1:9199', changeOrigin: true, rewrite: (p) => p.replace(/^\/auth-emu/, '') },
+      '/bundles': { target: 'http://127.0.0.1:4175', changeOrigin: true, rewrite: (p) => p.replace(/^\/bundles/, '') },
+    },
   },
 });

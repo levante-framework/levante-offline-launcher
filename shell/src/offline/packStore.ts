@@ -193,7 +193,10 @@ async function downloadFromBundles(pack: PackRecord, { id, progress, report }: S
       items.push({ name: e.name, contentType: e.contentType });
     }
   }
-  for (const [folder, items] of byFolder) await packStorage.putJson(id, `manifests/${folder}.json`, { items });
+  for (const [folder, items] of byFolder) {
+    const listed = folder.startsWith('visual/') ? preferWebpImages(items) : items;
+    await packStorage.putJson(id, `manifests/${folder}.json`, { items: listed });
+  }
 
   return { corpora, bundles };
 }
@@ -324,8 +327,8 @@ async function downloadFromListing(pack: PackRecord, { id, progress, report }: S
   const localeItems = (await listPrefix(`audio/${pack.locale}/`)).filter((it) => audioNames.has(baseName(it.name)));
   folders.push({ folder: `audio/${pack.locale}`, items: localeItems });
   folders.push({ folder: 'audio/shared', items: await listPrefix('audio/shared/') });
-  for (const task of pack.tasks) folders.push({ folder: `visual/${task.taskId}`, items: await listPrefix(`visual/${task.taskId}/`) });
-  folders.push({ folder: 'visual/shared', items: await listPrefix('visual/shared/') });
+  for (const task of pack.tasks) folders.push({ folder: `visual/${task.taskId}`, items: preferWebpImages(await listPrefix(`visual/${task.taskId}/`)) });
+  folders.push({ folder: 'visual/shared', items: preferWebpImages(await listPrefix('visual/shared/')) });
 
   const extras: string[] = [];
   const corpora: PackRecord['corpora'] = {};
@@ -378,6 +381,15 @@ async function downloadFromListing(pack: PackRecord, { id, progress, report }: S
 }
 
 // ---------- helpers ----------
+
+function preferWebpImages(items: GcsItem[]): GcsItem[] {
+  const webpStems = new Set<string>();
+  for (const it of items) {
+    if (/\.webp$/i.test(it.name)) webpStems.add(it.name.replace(/\.webp$/i, ''));
+  }
+  if (!webpStems.size) return items;
+  return items.filter((it) => !/\.(png|jpe?g)$/i.test(it.name) || !webpStems.has(it.name.replace(/\.(png|jpe?g)$/i, '')));
+}
 
 async function listPrefix(prefix: string): Promise<GcsItem[]> {
   const items: GcsItem[] = [];

@@ -77,8 +77,8 @@ async function main() {
   await mirror('audio/shared', await listPrefix('audio/shared/'));
 
   // 4. Per-task visuals + shared visuals.
-  for (const t of tasks) await mirror(`visual/${t}`, await listPrefix(`visual/${t}/`));
-  await mirror('visual/shared', await listPrefix('visual/shared/'));
+  for (const t of tasks) await mirror(`visual/${t}`, preferWebpImages(await listPrefix(`visual/${t}/`)));
+  await mirror('visual/shared', preferWebpImages(await listPrefix('visual/shared/')));
 
   // 5. Corpora (item banks).
   const corpora = {};
@@ -200,6 +200,15 @@ async function mirror(folder, items) {
   });
   const mb = items.reduce((a, f) => a + Number(f.size || 0), 0) / 1e6;
   console.log(`  ${folder}: ${items.length} files, ${mb.toFixed(1)} MB (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+}
+
+function preferWebpImages(items) {
+  const webpStems = new Set();
+  for (const it of items) {
+    if (/\.webp$/i.test(it.name)) webpStems.add(it.name.replace(/\.webp$/i, ''));
+  }
+  if (!webpStems.size) return items;
+  return items.filter((it) => !/\.(png|jpe?g)$/i.test(it.name) || !webpStems.has(it.name.replace(/\.(png|jpe?g)$/i, '')));
 }
 
 async function downloadObject(name, meta) {
