@@ -5,7 +5,9 @@
   "scripts": {
     "start": "PATH=/opt/homebrew/opt/openjdk/bin:$PATH firebase emulators:start --only auth,firestore,functions --project demo-levante-spike",
     "seed": "node seed.mjs",
+    "seed:science-fair": "node seed-science-fair.mjs",
     "inspect": "node inspect.mjs",
+    "inspect:science-fair": "node inspect-science-fair.mjs",
     "bundles": "node serve-bundles.mjs ../pack-builder/bundles"
   },
   "dependencies": {
