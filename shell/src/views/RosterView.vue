@@ -15,7 +15,7 @@
       <a href="#/sync">Sync &amp; export</a>
       <a href="#/provision">Provision</a>
       <a href="#/fair">Science fair</a>
-      <a href="#/" @click.prevent="lockDevice">Lock device</a>
+      <a v-if="needsPin" href="#/" @click.prevent="lockDevice">Lock device</a>
       <a v-if="pack" href="#/" @click.prevent="enterChildMode">Start child mode</a>
     </div>
 
@@ -23,6 +23,15 @@
       {{ error }}
       <div style="margin-top: 8px"><a href="#/provision"><button type="button" class="primary">Provision this device</button></a></div>
     </div>
+
+    <p v-if="pack && !childMode" class="notice">
+      Kiosk: tap <strong>Start child mode</strong>, then each visitor taps one unused name, plays a
+      task, and comes back here. The next visitor taps a different name. Do not provision or sign in
+      again between visitors.
+    </p>
+    <p v-else-if="pack && childMode" class="muted" style="margin-top: 12px">
+      Tap a name, then a task. When it finishes you return here — the next person picks a different name.
+    </p>
 
     <template v-if="pack">
       <h2>1 · Who is playing?</h2>
@@ -66,12 +75,22 @@
 
     <div v-if="childMode" class="proctor-exit">
       <form v-if="exitPrompt" class="row" @submit.prevent="exitChildMode">
-        <input v-model="exitPin" name="exitPin" type="password" inputmode="numeric" pattern="[0-9]*" placeholder="proctor PIN" autocomplete="off" required />
+        <input
+          v-if="needsPin"
+          v-model="exitPin"
+          name="exitPin"
+          type="password"
+          inputmode="numeric"
+          pattern="[0-9]*"
+          placeholder="device PIN"
+          autocomplete="off"
+          required
+        />
         <button type="submit" class="primary" :disabled="busy">Exit child mode</button>
         <button type="button" @click="exitPrompt = false">Cancel</button>
         <span v-if="exitError" class="error">{{ exitError }}</span>
       </form>
-      <a v-else href="#/" class="muted" @click.prevent="exitPrompt = true">Proctor</a>
+      <a v-else href="#/" class="muted" @click.prevent="exitPrompt = true">On-site Researcher</a>
     </div>
   </div>
 </template>
@@ -84,7 +103,7 @@ import { isChildMode, setChildMode } from '../offline/mode';
 import { loadPack } from '../offline/pack';
 import { platformLabel } from '../offline/storage';
 import type { PackRecord, RosterEntry } from '../offline/types';
-import { lock, unlock, vaultExists } from '../offline/vault';
+import { lock, pinProtected, unlock, vaultExists } from '../offline/vault';
 
 const pack = ref<PackRecord | null>(null);
 const selectedId = ref<string | null>(getSelectedChildId());
@@ -94,6 +113,7 @@ const localDone = ref<Record<string, string[]>>({});
 const error = ref('');
 const online = ref(navigator.onLine);
 const platform = platformLabel();
+const needsPin = pinProtected();
 const childMode = ref(isChildMode());
 const exitPrompt = ref(false);
 const exitPin = ref('');
@@ -177,12 +197,11 @@ function enterChildMode() {
   window.location.hash = '#/';
 }
 
-// Leaving child mode re-checks the PIN against the vault rather than trusting the session key.
 async function exitChildMode() {
   exitError.value = '';
   busy.value = true;
   try {
-    await unlock(exitPin.value);
+    if (needsPin) await unlock(exitPin.value);
     setChildMode(false);
     childMode.value = false;
     exitPrompt.value = false;

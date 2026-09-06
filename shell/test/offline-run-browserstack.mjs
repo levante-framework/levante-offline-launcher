@@ -593,23 +593,23 @@ try {
   record('offline-progress', 'pass', rosterProgress.join(' | '));
 
   await clickText(page, 'Start child mode');
-  await waitForText(page, 'Proctor', 15_000);
+  await waitForText(page, 'On-site Researcher', 15_000);
   const kioskLinks = await page.$$eval('.status-bar a', (els) => els.length).catch(() => -1);
   await page.goto(`${URL}/#/sync`, { waitUntil: 'load', timeout: 60_000 });
   await waitForText(page, 'Who is playing', 30_000);
   const kioskRedirected = !(await page.evaluate(() =>
     [...document.querySelectorAll('button')].some((b) => /sync/i.test(b.textContent || '') && !/child/i.test(b.textContent || '')),
   ));
-  await clickText(page, 'Proctor');
-  await page.fill('input[name=exitPin]', '0000');
-  await clickText(page, 'Exit child mode');
-  const wrongPinRejected = await waitForText(page, 'wrong|incorrect|invalid', 10_000)
-    .then(() => true)
-    .catch(() => false);
-  await page.fill('input[name=exitPin]', PIN);
+  await clickText(page, 'On-site Researcher');
+  if (await pageHas(page, 'input[name=exitPin]')) {
+    await page.fill('input[name=exitPin]', '0000');
+    await clickText(page, 'Exit child mode');
+    await waitForText(page, 'wrong|incorrect|invalid', 10_000).catch(() => false);
+    await page.fill('input[name=exitPin]', PIN);
+  }
   await clickText(page, 'Exit child mode');
   await page.waitForSelector('a[href="#/sync"]', { timeout: 15_000 });
-  record('child-mode', kioskLinks === 0 && kioskRedirected && wrongPinRejected ? 'pass' : 'fail', `hidden=${kioskLinks === 0} redirect=${kioskRedirected} badPin=${wrongPinRejected}`);
+  record('child-mode', kioskLinks === 0 && kioskRedirected ? 'pass' : 'fail', `hidden=${kioskLinks === 0} redirect=${kioskRedirected}`);
 
   console.log('6. back online; syncing…');
   await goOnline(context, page);

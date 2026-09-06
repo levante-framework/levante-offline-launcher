@@ -42,9 +42,9 @@
         }}</span>
       </div>
       <p class="muted">
-        Online. Set a device PIN, sign in as a research assistant or site admin, pick that
-        administration and one school or cohort, and download the pack. Stay on the network until
-        the download finishes.
+        Online. Open the pack link from the wizard on this tablet (any network), sign in, and tap
+        <strong>Download pack</strong>. Stay on the network until it finishes. Science-fair tablets
+        do not use a device PIN.
       </p>
       <p v-if="progress.packName" class="notice">Current pack: {{ progress.packName }}</p>
       <a href="#/provision"><button type="button" class="primary">Open provision</button></a>
@@ -52,16 +52,22 @@
 
     <div class="card">
       <div class="row" style="justify-content: space-between">
-        <h2 style="margin: 0">3 · Assess (kids)</h2>
+        <h2 style="margin: 0">3 · Run the kiosk</h2>
         <span class="pill" :class="progress.assessed ? 'ok' : 'warn'">{{
           progress.assessed ? `${progress.runCount} run(s) on device` : 'No runs yet'
         }}</span>
       </div>
       <p class="muted">
-        Optional: turn on child mode from the roster so visitors only see names and tasks. Pick a
-        child, play assigned tasks. Network is not required. Do not open Provision or Sync while a
-        child is at the tablet.
+        One tablet, many slots. You do not provision or sign in again between visitors. Play does
+        not need a network.
       </p>
+      <ol class="muted" style="padding-left: 1.2rem; margin: 0 0 12px">
+        <li>On the roster, tap <strong>Start child mode</strong> so visitors cannot open Provision or Sync.</li>
+        <li>Each visitor taps <strong>one unused name</strong>, then a task.</li>
+        <li>When the task finishes, the roster returns. The next visitor taps a <strong>different</strong> name.</li>
+        <li>Use the task counts to see which slots are still free.</li>
+        <li>Stay in child mode all day. Leave it only to sync: tap <strong>On-site Researcher</strong>, then Exit child mode.</li>
+      </ol>
       <a href="#/"><button type="button" class="primary">Open roster</button></a>
     </div>
 
@@ -77,7 +83,8 @@
         }}</span>
       </div>
       <p class="muted">
-        Online. Sign in as the same kind of proctor account and sync pending runs. This page marks
+        Online. Leave child mode, then sign in with the same On-site Researcher Google account
+        (or email / password) and sync pending runs. This page marks
         retrieval done when every local run is synced. You can also download a JSON export from the
         sync screen.
       </p>

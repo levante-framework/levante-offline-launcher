@@ -2,27 +2,46 @@ import { deriveKey, exportKey, fromBase64, importKey, open, randomBytes, seal, t
 
 // Device vault lifecycle.
 //
-// Threat model: a shared tablet that leaves the site's custody (lost, stolen, borrowed)
-// must not yield children's names, birth dates, or assessment data to whoever holds it.
-// The proctor sets a PIN when provisioning; the PIN never leaves the device. Everything
-// sensitive in IndexedDB is sealed with a key derived from it. After an unlock the raw
-// key lives in sessionStorage so the app survives the reload core-tasks needs between
-// tasks; closing the app (or "Lock") drops it. This is not a substitute for OS-level
-// device encryption and MDM; it is defence in depth for the data the app itself holds.
+// Science-fair (default) uses ensureOpenVault(): a random key stored on the device, no PIN.
+// Staff screens are gated by child mode plus researcher login for provision/sync.
+// PIN-sealed vaults remain for tablets that already have one, and for later full-site work.
+// After an unlock the raw key also lives in sessionStorage so the app survives the reload
+// core-tasks needs between tasks.
 
 const SALT_KEY = 'levante-offline:vault-salt';
 const CHECK_KEY = 'levante-offline:vault-check';
 const SESSION_KEY = 'levante-offline:vault-key';
+const OPEN_KEY = 'levante-offline:vault-open-key';
 const CHECK_VALUE = 'levante-offline-vault-v1';
 
 let cachedKey: CryptoKey | null = null;
 
-export function vaultExists(): boolean {
+/** PIN-sealed vault from an earlier provision. Science-fair (default) does not create these. */
+export function pinProtected(): boolean {
   return !!localStorage.getItem(SALT_KEY);
 }
 
+export function vaultExists(): boolean {
+  return pinProtected() || !!localStorage.getItem(OPEN_KEY);
+}
+
 export function isUnlocked(): boolean {
-  return cachedKey !== null || !!sessionStorage.getItem(SESSION_KEY);
+  return cachedKey !== null || !!sessionStorage.getItem(SESSION_KEY) || !!localStorage.getItem(OPEN_KEY);
+}
+
+/** Science-fair default: a device key with no PIN, persisted so reloads stay unlocked. */
+export async function ensureOpenVault(): Promise<void> {
+  if (pinProtected()) return;
+  const existing = localStorage.getItem(OPEN_KEY);
+  if (existing) {
+    cachedKey = await importKey(existing);
+    sessionStorage.setItem(SESSION_KEY, existing);
+    return;
+  }
+  const raw = toBase64(randomBytes(32));
+  localStorage.setItem(OPEN_KEY, raw);
+  cachedKey = await importKey(raw);
+  sessionStorage.setItem(SESSION_KEY, raw);
 }
 
 /** Creates the vault with a fresh salt; wipes nothing else, so call only on a fresh device. */
@@ -57,7 +76,7 @@ export function lock(): void {
 /** The unlocked key, or a "locked" error the UI turns into the lock screen. */
 export async function requireKey(): Promise<CryptoKey> {
   if (cachedKey) return cachedKey;
-  const raw = sessionStorage.getItem(SESSION_KEY);
+  const raw = sessionStorage.getItem(SESSION_KEY) ?? localStorage.getItem(OPEN_KEY);
   if (!raw) throw new VaultLockedError();
   cachedKey = await importKey(raw);
   return cachedKey;
@@ -73,7 +92,7 @@ export async function openValue<T>(box: SealedBox): Promise<T> {
 
 export class VaultLockedError extends Error {
   constructor() {
-    super('The device vault is locked. Enter the proctor PIN.');
+    super('The device vault is locked. Enter the device PIN.');
     this.name = 'VaultLockedError';
   }
 }

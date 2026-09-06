@@ -24,13 +24,25 @@
           </button>
           <button type="button" @click="doSignOut">Sign out</button>
         </div>
-        <form v-else class="row" @submit.prevent="signInAndSync">
-          <input v-model="email" type="email" placeholder="proctor email" autocomplete="username" required />
-          <input v-model="password" type="password" placeholder="password" autocomplete="current-password" required />
-          <button type="submit" class="primary" :disabled="!online || !pending.length || syncing">
-            {{ syncing ? 'Syncing…' : `Sign in & sync ${pending.length} pending run(s)` }}
+        <div v-else>
+          <button
+            v-if="googleAuthConfigured"
+            type="button"
+            class="google-btn"
+            :disabled="!online || !pending.length || syncing"
+            @click="signInWithGoogleAndSync"
+          >
+            {{ syncing ? 'Syncing…' : `Continue with Google & sync ${pending.length} pending run(s)` }}
           </button>
-        </form>
+          <p v-if="googleAuthConfigured" class="muted">or use email and password</p>
+          <form class="row" @submit.prevent="signInAndSync">
+            <input v-model="email" type="email" placeholder="researcher email" autocomplete="username" required />
+            <input v-model="password" type="password" placeholder="password" autocomplete="current-password" required />
+            <button type="submit" class="primary" :disabled="!online || !pending.length || syncing">
+              {{ syncing ? 'Syncing…' : `Sign in & sync ${pending.length} pending run(s)` }}
+            </button>
+          </form>
+        </div>
       </template>
       <div v-if="message" class="notice" style="margin-top: 12px">{{ message }}</div>
       <div v-if="error" class="error" style="margin-top: 12px">{{ error }}</div>
@@ -84,7 +96,15 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { backendConfigured, getSession, type ProctorSession, signIn, signOut } from '../offline/auth';
+import {
+  backendConfigured,
+  getSession,
+  googleAuthConfigured,
+  type ProctorSession,
+  signIn,
+  signInWithGoogle,
+  signOut,
+} from '../offline/auth';
 import { deleteRun, listRuns } from '../offline/db';
 import { getDeviceId } from '../offline/device';
 import { buildExportBundle, downloadJson } from '../offline/exportRuns';
@@ -125,6 +145,16 @@ async function signInAndSync() {
   try {
     session.value = await signIn(email.value, password.value);
     password.value = '';
+    await sync();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  }
+}
+
+async function signInWithGoogleAndSync() {
+  error.value = '';
+  try {
+    session.value = await signInWithGoogle();
     await sync();
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);

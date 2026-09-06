@@ -5,7 +5,12 @@ import './offline/debugStore';
 import { initSentry } from './offline/sentry';
 import './style.css';
 
-registerSW({ immediate: true });
+const updateSW = registerSW({
+  immediate: true,
+  onNeedRefresh() {
+    void updateSW(true);
+  },
+});
 
 const app = createApp(App);
 initSentry(app);

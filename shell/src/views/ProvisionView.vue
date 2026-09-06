@@ -2,9 +2,8 @@
   <div class="page">
     <h1>Provision this device</h1>
     <p class="muted">
-      While online, sign in as the site's proctor, pick an administration and the school or cohort this
-      device will serve, and download everything the device needs to assess those children offline:
-      roster, task settings, and stimuli.
+      While online, sign in as the site's On-site Researcher. If you opened a science-fair pack link, this
+      page already knows the assignment and cohort — sign in and download. Otherwise, pick them below.
     </p>
     <div class="row">
       <a href="#/"><button type="button">← Roster</button></a>
@@ -17,38 +16,54 @@
     </div>
 
     <div class="card">
-      <h2 style="margin-top: 0">1 · Device PIN</h2>
-      <p v-if="hasVault" class="muted" style="margin: 0">
-        A vault exists on this device; rosters, runs and trials are sealed with its PIN.
+      <h2 style="margin-top: 0">1 · On-site Researcher sign-in</h2>
+      <p class="muted" style="margin-top: 0">
+        Use Google if that is how you sign in to the dashboard. Email and password still works.
+        Science-fair tablets do not use a device PIN.
       </p>
-      <template v-else>
-        <p class="muted" style="margin-top: 0">
-          Choose a 4–12 digit PIN. Everything the device stores about children is encrypted with it, and it is
-          required to unlock the app. It cannot be recovered — without it the device must be wiped.
-        </p>
-        <form class="row" @submit.prevent="createPin">
-          <input v-model="pin" name="pin" type="password" inputmode="numeric" pattern="[0-9]*" placeholder="PIN" autocomplete="off" required />
-          <input v-model="pinConfirm" name="pinConfirm" type="password" inputmode="numeric" pattern="[0-9]*" placeholder="confirm PIN" autocomplete="off" required />
-          <button type="submit" class="primary" :disabled="busy">Set PIN</button>
-        </form>
-      </template>
-    </div>
-
-    <div class="card">
-      <h2 style="margin-top: 0">2 · Proctor sign-in</h2>
       <div v-if="session" class="row">
         <span>Signed in as <strong>{{ session.email }}</strong></span>
         <button type="button" @click="doSignOut">Sign out</button>
       </div>
-      <form v-else class="row" @submit.prevent="doSignIn">
-        <input v-model="email" type="email" placeholder="proctor email" autocomplete="username" required />
-        <input v-model="password" type="password" placeholder="password" autocomplete="current-password" required />
-        <button type="submit" class="primary" :disabled="!online || busy">Sign in</button>
-      </form>
+      <div v-else class="sign-in-stack">
+        <button
+          v-if="googleAuthConfigured"
+          type="button"
+          class="google-btn"
+          :disabled="!online || busy"
+          @click="doGoogleSignIn"
+        >
+          Continue with Google
+        </button>
+        <p v-if="googleAuthConfigured" class="muted sign-in-or">or use email and password</p>
+        <form class="row" @submit.prevent="doSignIn">
+          <input v-model="email" type="email" placeholder="researcher email" autocomplete="username" required />
+          <input v-model="password" type="password" placeholder="password" autocomplete="current-password" required />
+          <button type="submit" :disabled="!online || busy">Sign in</button>
+        </form>
+      </div>
     </div>
 
-    <div class="card" v-if="session">
-      <h2 style="margin-top: 0">3 · Choose an administration</h2>
+    <div class="card" v-if="session && eventLink">
+      <h2 style="margin-top: 0">2 · Download this event</h2>
+      <p class="muted" style="margin-top: 0">
+        This link is for <strong>{{ eventAdminName || 'the assignment from the wizard' }}</strong>
+        <span v-if="eventScopeName"> · {{ eventScopeName }}</span>.
+      </p>
+      <p v-if="eventApplying" class="muted">Looking up that assignment…</p>
+      <div class="row" style="margin-top: 12px">
+        <button type="button" class="primary big" :disabled="!canProvision" @click="provision">
+          {{ busy && progress ? 'Downloading…' : 'Download pack' }}
+        </button>
+      </div>
+      <div v-if="progress" class="muted" style="margin-top: 10px">
+        {{ progress.filesDone }} / {{ progress.fileCount || '?' }} files · {{ (progress.bytes / 1e6).toFixed(1) }} MB
+        <span class="mono">{{ progress.current }}</span>
+      </div>
+    </div>
+
+    <div class="card" v-if="session && !eventLink">
+      <h2 style="margin-top: 0">2 · Choose an administration</h2>
       <div class="row">
         <button type="button" @click="loadAdministrations" :disabled="busy || !online">
           {{ administrations.length ? 'Reload administrations' : 'Load my administrations' }}
@@ -70,8 +85,8 @@
       </div>
     </div>
 
-    <div class="card" v-if="session && selectedId">
-      <h2 style="margin-top: 0">4 · Which children?</h2>
+    <div class="card" v-if="session && selectedId && !eventLink">
+      <h2 style="margin-top: 0">3 · Which children?</h2>
       <p class="muted" style="margin-top: 0">
         A device serves one school or one cohort. Its roster is the children of that group who hold an
         assignment for the administration, with what they have already completed.
@@ -144,14 +159,23 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
-import { backendConfigured, callFunction, getSession, type ProctorSession, signIn, signOut } from '../offline/auth';
+import { computed, onMounted, ref, watch } from 'vue';
+import {
+  backendConfigured,
+  callFunction,
+  getSession,
+  googleAuthConfigured,
+  type ProctorSession,
+  signIn,
+  signInWithGoogle,
+  signOut,
+} from '../offline/auth';
 import { logError, logInfo } from '../offline/sentry';
 import { listPacks, putPack } from '../offline/db';
 import { deviceInfo } from '../offline/device';
 import { deletePack, type DownloadProgress, downloadPack, getActivePackId, markPackError, setActivePackId } from '../offline/packStore';
 import type { PackRecord, PackScope, PackTaskConfig, RosterEntry } from '../offline/types';
-import { createVault, vaultExists } from '../offline/vault';
+import { ensureOpenVault } from '../offline/vault';
 
 interface AdministrationSummary {
   id: string;
@@ -176,12 +200,33 @@ interface ProvisionResult {
   };
 }
 
+function readEventLink() {
+  const hash = window.location.hash;
+  if (!hash.startsWith('#/provision')) return null;
+  const qStart = hash.indexOf('?');
+  if (qStart < 0) return null;
+  const query = new URLSearchParams(hash.slice(qStart));
+  const admin = query.get('admin');
+  if (!admin) return null;
+  const orgType = query.get('orgType');
+  const orgId = query.get('orgId');
+  return {
+    admin,
+    orgType: orgType === 'school' || orgType === 'cohort' ? orgType : null,
+    orgId,
+  };
+}
+
+const eventLink = ref(readEventLink());
+const eventApplying = ref(false);
+const eventAdminName = computed(
+  () => administrations.value.find((item) => item.id === eventLink.value?.admin)?.name ?? '',
+);
+const eventScopeName = computed(() => selectedScope.value?.name ?? '');
+
 const session = ref<ProctorSession | null>(getSession());
 const email = ref('');
 const password = ref('');
-const hasVault = ref(vaultExists());
-const pin = ref('');
-const pinConfirm = ref('');
 const administrations = ref<AdministrationSummary[]>([]);
 const selectedId = ref<string | null>(null);
 const scopes = ref<PackScope[]>([]);
@@ -199,7 +244,6 @@ const online = ref(navigator.onLine);
 const canProvision = computed(
   () =>
     !!selectedId.value &&
-    hasVault.value &&
     online.value &&
     !busy.value &&
     scopesLoaded.value &&
@@ -209,32 +253,46 @@ const canProvision = computed(
 onMounted(() => {
   window.addEventListener('online', () => (online.value = true));
   window.addEventListener('offline', () => (online.value = false));
+  void ensureOpenVault();
   void refreshPacks();
 });
+
+watch(
+  session,
+  async (value) => {
+    if (value && eventLink.value) await applyEventLink();
+  },
+  { immediate: true },
+);
+
+async function applyEventLink() {
+  const ev = eventLink.value;
+  if (!ev || !session.value) return;
+  eventApplying.value = true;
+  error.value = '';
+  try {
+    await loadAdministrations();
+    if (!administrations.value.some((item) => item.id === ev.admin)) {
+      error.value = 'This account cannot see that assignment. Sign in as a site admin for this event.';
+      return;
+    }
+    await selectAdministration(ev.admin);
+    if (ev.orgType && ev.orgId) {
+      const scope = scopes.value.find((item) => item.orgType === ev.orgType && item.orgId === ev.orgId);
+      if (!scope) {
+        error.value = 'That cohort is not on this assignment. Add the cohort to the assignment, then open the link again.';
+        return;
+      }
+      selectedScope.value = scope;
+    }
+  } finally {
+    eventApplying.value = false;
+  }
+}
 
 async function refreshPacks() {
   packs.value = await listPacks();
   activeId.value = getActivePackId();
-}
-
-async function createPin() {
-  error.value = '';
-  if (pin.value !== pinConfirm.value) {
-    error.value = 'The PINs do not match.';
-    return;
-  }
-  busy.value = true;
-  try {
-    await createVault(pin.value);
-    hasVault.value = true;
-    pin.value = '';
-    pinConfirm.value = '';
-    message.value = 'Device PIN set; this device is now sealed.';
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err);
-  } finally {
-    busy.value = false;
-  }
 }
 
 async function doSignIn() {
@@ -243,6 +301,18 @@ async function doSignIn() {
   try {
     session.value = await signIn(email.value, password.value);
     password.value = '';
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function doGoogleSignIn() {
+  error.value = '';
+  busy.value = true;
+  try {
+    session.value = await signInWithGoogle();
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   } finally {
@@ -267,7 +337,6 @@ async function loadAdministrations() {
   try {
     const res = await callFunction<{ status: string; data: Array<Record<string, unknown>> }>('getAdministrations', {
       idsOnly: false,
-      restrictToOpenAdministrations: true,
     });
     administrations.value = (res.data ?? []).map((a) => ({
       id: String(a.id),
@@ -388,6 +457,15 @@ function toDateString(value: unknown): string | null {
 </script>
 
 <style scoped>
+.sign-in-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+.sign-in-or {
+  margin: 0;
+}
 input {
   font: inherit;
   padding: 8px 10px;

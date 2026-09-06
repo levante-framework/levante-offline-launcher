@@ -8,6 +8,7 @@
     "build": "vite build",
     "build:emulator": "vite build --mode emulator",
     "build:dev": "vite build --mode dev",
+    "deploy:dev:preview": "npm run build:dev && npx firebase hosting:channel:deploy offline-launcher --expires 30d --project hs-levante-admin-dev",
     "build:browserstack": "vite build --mode browserstack",
     "preview:browserstack": "PREVIEW_HTTPS=1 vite preview --port 4173 --host",
     "test:offline": "node test/offline-run.mjs",
@@ -24,6 +25,7 @@
     "@capacitor/ios": "^8.5.1",
     "@levante-framework/core-tasks": "file:../core-tasks/task-launcher",
     "@sentry/vue": "^10.73.0",
+    "firebase": "^11.10.0",
     "idb": "^8.0.0",
     "vue": "^3.5.13"
   },

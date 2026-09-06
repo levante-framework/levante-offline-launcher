@@ -1,7 +1,7 @@
 <template>
   <div class="page">
     <h1>Device locked</h1>
-    <p class="muted">Enter the proctor PIN set when this device was provisioned.</p>
+    <p class="muted">Enter the device PIN the On-site Researcher set when this tablet was provisioned.</p>
     <form class="row" @submit.prevent="submit">
       <input v-model="pin" name="pin" type="password" inputmode="numeric" pattern="[0-9]*" placeholder="PIN" autocomplete="off" required />
       <button type="submit" class="primary" :disabled="busy">Unlock</button>

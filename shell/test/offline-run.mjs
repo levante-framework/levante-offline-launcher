@@ -355,22 +355,24 @@ const rosterProgress = await page.$$eval('.child', (els) =>
 console.log(`   roster progress while offline: ${rosterProgress.join(' | ')}`);
 await page.screenshot({ path: path.join(OUT, '5-roster-after-run.png') });
 
-// 5c. Child (kiosk) mode: proctor controls gone, proctor routes redirect, PIN to leave.
+// 5c. Child (kiosk) mode: staff controls gone, staff routes redirect, confirm to leave.
 await page.click('a:has-text("Start child mode")');
-await page.waitForSelector('a:has-text("Proctor")', { timeout: 10_000 });
+await page.waitForSelector('a:has-text("On-site Researcher")', { timeout: 10_000 });
 const kioskLinks = await page.$$eval('.status-bar a', (els) => els.length);
 await page.goto(`${URL}/#/sync`, { waitUntil: 'load' });
 await page.waitForSelector('h2:has-text("Who is playing?")', { timeout: 30_000 });
 const kioskRedirected = !(await page.$('button:has-text("Sync")'));
 await page.screenshot({ path: path.join(OUT, '5-child-mode.png') });
-await page.click('a:has-text("Proctor")');
-await page.fill('input[name=exitPin]', '0000');
-await page.click('button:has-text("Exit child mode")');
-const wrongPinRejected = !!(await page.waitForSelector('.proctor-exit .error', { timeout: 10_000 }));
-await page.fill('input[name=exitPin]', PIN);
+await page.click('a:has-text("On-site Researcher")');
+if (await page.$('input[name=exitPin]')) {
+  await page.fill('input[name=exitPin]', '0000');
+  await page.click('button:has-text("Exit child mode")');
+  await page.waitForSelector('.proctor-exit .error', { timeout: 10_000 });
+  await page.fill('input[name=exitPin]', PIN);
+}
 await page.click('button:has-text("Exit child mode")');
 await page.waitForSelector('a[href="#/sync"]', { timeout: 10_000 });
-console.log(`   child mode: proctor links hidden=${kioskLinks === 0}, #/sync redirected to roster=${kioskRedirected}, wrong PIN rejected=${wrongPinRejected}, exited with PIN`);
+console.log(`   child mode: staff links hidden=${kioskLinks === 0}, #/sync redirected to roster=${kioskRedirected}`);
 
 // 6. Reconnect and sync through the app's own Sync page (the proctor session is still live).
 console.log('6. back online; syncing via the Sync page…');
