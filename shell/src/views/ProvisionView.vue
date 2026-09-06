@@ -9,6 +9,7 @@
     <div class="row">
       <a href="#/"><button type="button">← Roster</button></a>
       <a href="#/sync"><button type="button">Sync &amp; export</button></a>
+      <a href="#/fair"><button type="button">Science fair</button></a>
     </div>
 
     <div v-if="!backendConfigured" class="error" style="margin-top: 12px">

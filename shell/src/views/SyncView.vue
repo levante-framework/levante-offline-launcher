@@ -8,6 +8,7 @@
     <div class="row">
       <a href="#/"><button type="button">← Roster</button></a>
       <a href="#/provision"><button type="button">Provision</button></a>
+      <a href="#/fair"><button type="button">Science fair</button></a>
       <button type="button" @click="exportAll" :disabled="!runs.length">Download JSON export</button>
       <button type="button" @click="clearSynced" :disabled="!synced.length">Delete {{ synced.length }} synced</button>
     </div>

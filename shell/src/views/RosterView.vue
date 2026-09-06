@@ -14,6 +14,7 @@
       <span>Pending runs: {{ pendingCount }}</span>
       <a href="#/sync">Sync &amp; export</a>
       <a href="#/provision">Provision</a>
+      <a href="#/fair">Science fair</a>
       <a href="#/" @click.prevent="lockDevice">Lock device</a>
       <a v-if="pack" href="#/" @click.prevent="enterChildMode">Start child mode</a>
     </div>

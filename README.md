@@ -102,8 +102,8 @@ By hand, in Chrome or Safari: open the app → Provision → set a PIN, sign in 
 (research assistant), load administrations, pick "Offline spike", pick "Sunrise Primary"
 (school: Ada, Blaise) or "Pilot cohort A" (cohort: Blaise, Carla), Provision → back to
 Roster → turn Wi‑Fi off → play → Wi‑Fi on → Sync. The in-app Claude browser pane blocks
-service workers; use a real browser. Routes are hash paths (`#/`, `#/provision`, `#/sync`)
-— do not rewrite them.
+service workers; use a real browser. Routes are hash paths (`#/`, `#/provision`, `#/sync`, `#/fair`)
+— do not rewrite them. `#/fair` is the staff science-fair / museum runbook.
 
 ## Against `hs-levante-admin-dev`
 
@@ -181,7 +181,7 @@ firebase --project dev deploy --only functions:levante-admin:provisionOfflinePac
   launcher falls back to listing the bucket folders and fetching ~1,800 objects, which is
   what made WebKit take minutes.
 - **Child mode.** "Start child mode" on the roster hides the proctor controls (sync,
-  provisioning, lock, PIDs/birth dates) and makes `#/sync` and `#/provision` route back to the
+  provisioning, lock, PIDs/birth dates) and makes `#/sync`, `#/provision`, and `#/fair` route back to the
   roster; leaving it requires the device PIN, verified against the vault rather than the
   session key. The flag survives the reload core-tasks needs between tasks and a relaunch.
   It is a UI guard, not a security boundary: on a real deployment pair it with the OS kiosk
