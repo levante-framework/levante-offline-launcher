@@ -108,8 +108,8 @@ service workers; use a real browser. Routes are hash paths (`#/`, `#/provision`,
 ## Against `hs-levante-admin-dev`
 
 The three callables are live on that project (`us-central1`, codebase `levante-admin`).
-`shell/.env.dev` points Auth and Functions there; assets still come from the public
-`levante-assets-prod` bucket. Sentry (`offline-launcher` in the levante-framework org)
+`shell/.env.dev` points Auth, Functions, and assets at `-dev`
+(`levante-assets-dev`, same bucket the dashboard uses). Sentry (`offline-launcher` in the levante-framework org)
 gets errors plus lifecycle logs (boot, sign-in, provision, task, sync). No session
 replay — this shell sits in front of children. Rebuild after changing `VITE_SENTRY_DSN`.
 Set `SENTRY_AUTH_TOKEN` when building so hidden source maps upload to that project
@@ -118,6 +118,14 @@ and are stripped from `dist` (readable stacks; maps never ship to the tablet).
 ```bash
 cd shell
 npm run build:dev && npm run preview        # http://127.0.0.1:4173
+```
+
+The science-fair wizard on `-dev` uses the same password login as Cypress
+(`E2E_TEST_EMAIL` / `E2E_TEST_PASSWORD` from levante-support `.env`). Never Google SSO:
+
+```bash
+set -a && source /path/to/levante-support/.env && set +a
+cd shell && npm run test:science-fair:dev
 ```
 
 Sign in with a **dashboard-dev** site admin or research assistant — not

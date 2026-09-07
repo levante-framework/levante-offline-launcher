@@ -338,7 +338,8 @@ async function downloadFromListing(pack: PackRecord, { id, progress, report }: S
       extras.push(`corpus/${task.taskId}/${corpus}.csv`);
       corpora[task.taskId] = { corpus, sha256: '' };
     }
-    extras.push(`translations/itembank/${translationTaskFor(task.taskId)}/${pack.locale}/item-bank-translations.json`);
+    const translationTask = translationTaskFor(task.taskId);
+    if (translationTask) extras.push(`translations/itembank/${translationTask}/${pack.locale}/item-bank-translations.json`);
   }
   extras.push(`translations/itembank/general/${pack.locale}/item-bank-translations.json`);
 

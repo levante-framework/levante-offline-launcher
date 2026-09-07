@@ -22,7 +22,8 @@ export function corpusFor(taskId: string, variantParams: Record<string, unknown>
   return DEFAULT_CORPUS[taskId] ?? null;
 }
 
-/** core-tasks reads adult-reasoning strings from the math item bank. */
-export function translationTaskFor(taskId: string) {
-  return taskId === 'adult-reasoning' ? 'egma-math' : taskId;
+export function translationTaskFor(taskId: string): string | null {
+  if (taskId === 'intro') return null;
+  if (taskId === 'adult-reasoning') return 'egma-math';
+  return taskId;
 }
