@@ -59,7 +59,7 @@ const CHILD_COUNT = Number(args.count || 10);
 const PLAY_LIMIT = Number(args['max-children'] || 0);
 const MIN_AGE = Number(args['min-age'] || 5);
 const MAX_AGE = Number(args['max-age'] || 12);
-const MAX_SECONDS = Number(args['max-seconds'] || 180);
+const MAX_SECONDS = Number(args['max-seconds'] || 300);
 const LOGIN_ONLY = args['login-only'] === 'true';
 const WIZARD_ONLY = args['wizard-only'] === 'true';
 const SKIP_USERS = args['skip-users'] === 'true';
@@ -332,6 +332,12 @@ async function playOffline(page, origin, pids) {
             /* vanished */
           }
         }
+        if (task === 'hearts-and-flowers') {
+          await page.keyboard.press(' ');
+          await page.keyboard.press(Math.random() < 0.5 ? 'ArrowLeft' : 'ArrowRight');
+          clicked = true;
+          clicks++;
+        }
         if (clicks % 10 === 0) {
           const { trials } = await idbAll(page);
           if (trials.length !== lastTrials) {
@@ -404,8 +410,10 @@ try {
     await waitForDownloadEnabled(page, PACK_LINK);
     const t0p = Date.now();
     await page.getByRole('button', { name: /Download pack|Provision this device/ }).click();
-    await page.waitForSelector('.notice', { timeout: 15 * 60_000 });
-    console.log(`   ${await page.evaluate(() => document.querySelector('.notice')?.textContent?.trim())} (${((Date.now() - t0p) / 1000).toFixed(0)}s)`);
+    await page.waitForSelector('.notice, .error', { timeout: 15 * 60_000 });
+    const provisionMsg = await page.evaluate(() => document.querySelector('.notice, .error')?.textContent?.trim());
+    console.log(`   ${provisionMsg} (${((Date.now() - t0p) / 1000).toFixed(0)}s)`);
+    if (await page.locator('.error').count()) throw new Error(provisionMsg || 'provision failed');
     console.log('2. play offline…');
     await page.goto(`${origin}/#/`, { waitUntil: 'load' });
     await page.waitForSelector('text=Who is playing?', { timeout: 30_000 });

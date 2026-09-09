@@ -9,6 +9,6 @@ platforms:
   - deviceName: iPad Air 11 2026
     osVersion: "26"
     browserName: safari
-  - deviceName: Samsung Galaxy Tab S11
-    osVersion: "16.0"
+  - deviceName: Samsung Galaxy Tab A9 Plus
+    osVersion: "14.0"
     browserName: chrome
