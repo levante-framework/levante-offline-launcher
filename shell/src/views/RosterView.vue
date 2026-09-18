@@ -1,6 +1,6 @@
 <template>
   <div class="page">
-    <h1>LEVANTE Offline Launcher</h1>
+    <h1>3 · Roster</h1>
     <p class="muted" v-if="pack && !childMode">
       <strong>{{ pack.name }}</strong> · {{ scopeLabel }} · {{ pack.locale }} · {{ pack.children.length }} children ·
       {{ pack.fileCount }} files / {{ mb(pack.totalBytes) }} MB · provisioned
@@ -8,15 +8,13 @@
       <span v-if="pack.dateClosed"> · closes {{ pack.dateClosed.slice(0, 10) }}</span>
     </p>
 
+    <StaffNav v-if="!childMode" current="roster" />
     <div class="status-bar" v-if="!childMode">
       <span>{{ online ? 'Network: online' : 'Network: offline' }}</span>
       <span>{{ platform }}</span>
       <span>Pending runs: {{ pendingCount }}</span>
-      <a href="#/sync">Sync &amp; export</a>
-      <a href="#/provision">Provision</a>
-      <a href="#/fair">Science fair</a>
-      <a v-if="needsPin" href="#/" @click.prevent="lockDevice">Lock device</a>
-      <a v-if="pack" href="#/" @click.prevent="enterChildMode">Start child mode</a>
+      <a v-if="needsPin" href="#/" title="Lock this tablet with the device PIN" @click.prevent="lockDevice">Lock device</a>
+      <a v-if="pack" href="#/" title="Hide staff screens so children only see names and tasks" @click.prevent="enterChildMode">Start child mode</a>
     </div>
 
     <div v-if="error" class="error" style="margin-top: 12px">
@@ -25,12 +23,12 @@
     </div>
 
     <p v-if="pack && !childMode" class="notice">
-      Kiosk: tap <strong>Start child mode</strong>, then each visitor taps one unused name, plays a
-      task, and comes back here. The next visitor taps a different name. Do not provision or sign in
-      again between visitors.
+      Tap <strong>Start child mode</strong>, then each child taps their own name, plays a task, and
+      comes back here. The next child taps a different name. Do not provision or sign in again
+      between children.
     </p>
     <p v-else-if="pack && childMode" class="muted" style="margin-top: 12px">
-      Tap a name, then a task. When it finishes you return here — the next person picks a different name.
+      Tap a name, then a task. When it finishes you return here — the next child picks a different name.
     </p>
 
     <template v-if="pack">
@@ -97,6 +95,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import StaffNav from '../components/StaffNav.vue';
 import { countRuns, listRuns } from '../offline/db';
 import { getSelectedChildId, setSelectedChildId } from '../offline/device';
 import { isChildMode, setChildMode } from '../offline/mode';

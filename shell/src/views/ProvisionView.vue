@@ -1,121 +1,49 @@
 <template>
   <div class="page">
-    <h1>Provision this device</h1>
+    <h1>2 · Provision</h1>
     <p class="muted">
-      While online, sign in as the site's On-site Researcher. If you opened a science-fair pack link, this
-      page already knows the assignment and cohort — sign in and download. Otherwise, pick them below.
+      Pick a pack for the site chosen in step 1 — each pack is one assignment and the children in
+      one cohort, classroom, or school.
     </p>
-    <div class="row">
-      <a href="#/"><button type="button">← Roster</button></a>
-      <a href="#/sync"><button type="button">Sync &amp; export</button></a>
-      <a href="#/fair"><button type="button">Science fair</button></a>
-    </div>
+    <StaffNav current="provision" />
 
     <div v-if="!backendConfigured" class="error" style="margin-top: 12px">
       This build has no backend configured (VITE_FUNCTIONS_BASE / VITE_AUTH_SIGNIN_URL).
     </div>
 
-    <div class="card">
-      <h2 style="margin-top: 0">1 · On-site Researcher sign-in</h2>
+    <div class="card" v-if="session && selectedSiteId">
+      <h2 style="margin-top: 0">Packs for this site</h2>
       <p class="muted" style="margin-top: 0">
-        Use Google if that is how you sign in to the dashboard. Email and password still works.
-        Science-fair tablets do not use a device PIN.
+        Site: <strong>{{ currentSiteLabel }}</strong>
+        · <a href="#/site">change site</a>
       </p>
-      <div v-if="session" class="row">
-        <span>Signed in as <strong>{{ session.email }}</strong></span>
-        <button type="button" @click="doSignOut">Sign out</button>
+      <div v-if="splash && session" class="spinner-overlay" role="status" aria-live="polite">
+        <div class="spinner" aria-hidden="true" />
+        <p class="muted">{{ splash }}</p>
       </div>
-      <div v-else class="sign-in-stack">
+      <div class="child-list" v-else-if="preparedPacks.length">
         <button
-          v-if="googleAuthConfigured"
+          v-for="p in preparedPacks"
+          :key="p.packId"
+          class="child"
+          :class="{ selected: selectedPreparedId === p.packId }"
           type="button"
-          class="google-btn"
-          :disabled="!online || busy"
-          @click="doGoogleSignIn"
+          @click="selectPrepared(p)"
         >
-          Continue with Google
+          <div><strong>{{ p.assignmentName }}</strong></div>
+          <div class="muted">{{ p.orgName }} · {{ p.orgType }}</div>
         </button>
-        <p v-if="googleAuthConfigured" class="muted sign-in-or">or use email and password</p>
-        <form class="row" @submit.prevent="doSignIn">
-          <input v-model="email" type="email" placeholder="researcher email" autocomplete="username" required />
-          <input v-model="password" type="password" placeholder="password" autocomplete="current-password" required />
-          <button type="submit" :disabled="!online || busy">Sign in</button>
-        </form>
       </div>
-    </div>
-
-    <div class="card" v-if="session && eventLink">
-      <h2 style="margin-top: 0">2 · Download this event</h2>
-      <p class="muted" style="margin-top: 0">
-        This link is for <strong>{{ eventAdminName || 'the assignment from the wizard' }}</strong>
-        <span v-if="eventScopeName"> · {{ eventScopeName }}</span>.
+      <p v-else-if="selectedSiteId" class="notice">
+        No assignments with a cohort, classroom, or school were found on this site.
       </p>
-      <p v-if="eventApplying" class="muted">Looking up that assignment…</p>
-      <div class="row" style="margin-top: 12px">
+      <p v-else class="notice">This account has no site assignments to provision.</p>
+      <div class="row" style="margin-top: 12px" v-if="selectedPreparedId">
         <button type="button" class="primary big" :disabled="!canProvision" @click="provision">
           {{ busy && progress ? 'Downloading…' : 'Download pack' }}
         </button>
       </div>
-      <div v-if="progress" class="muted" style="margin-top: 10px">
-        {{ progress.filesDone }} / {{ progress.fileCount || '?' }} files · {{ (progress.bytes / 1e6).toFixed(1) }} MB
-        <span class="mono">{{ progress.current }}</span>
-      </div>
-    </div>
-
-    <div class="card" v-if="session && !eventLink">
-      <h2 style="margin-top: 0">2 · Choose an administration</h2>
-      <div class="row">
-        <button type="button" @click="loadAdministrations" :disabled="busy || !online">
-          {{ administrations.length ? 'Reload administrations' : 'Load my administrations' }}
-        </button>
-      </div>
-      <div class="child-list" style="margin-top: 12px" v-if="administrations.length">
-        <button
-          v-for="a in administrations"
-          :key="a.id"
-          class="child"
-          :class="{ selected: selectedId === a.id }"
-          type="button"
-          @click="selectAdministration(a.id)"
-        >
-          <div><strong>{{ a.name }}</strong></div>
-          <div class="muted mono">{{ a.id }}</div>
-          <div class="muted">{{ a.tasks.join(', ') || 'no tasks' }}<span v-if="a.dateClosed"> · closes {{ a.dateClosed }}</span></div>
-        </button>
-      </div>
-    </div>
-
-    <div class="card" v-if="session && selectedId && !eventLink">
-      <h2 style="margin-top: 0">3 · Which children?</h2>
-      <p class="muted" style="margin-top: 0">
-        A device serves one school or one cohort. Its roster is the children of that group who hold an
-        assignment for the administration, with what they have already completed.
-      </p>
-      <p v-if="scopesLoading" class="muted">Loading schools and cohorts…</p>
-      <template v-else-if="scopes.length">
-        <div class="child-list">
-          <button
-            v-for="s in scopes"
-            :key="s.orgType + s.orgId"
-            class="child scope"
-            :class="{ selected: selectedScope?.orgId === s.orgId && selectedScope?.orgType === s.orgType }"
-            type="button"
-            @click="selectedScope = s"
-          >
-            <div><strong>{{ s.name }}</strong></div>
-            <div class="muted">{{ s.orgType }}</div>
-          </button>
-        </div>
-      </template>
-      <p v-else-if="scopesLoaded" class="notice">
-        This administration has no schools or cohorts to scope to; the device will hold the whole site.
-      </p>
-      <div class="row" style="margin-top: 12px">
-        <button type="button" class="primary big" :disabled="!canProvision" @click="provision">
-          {{ busy && progress ? 'Downloading…' : 'Provision this device' }}
-        </button>
-      </div>
-      <div v-if="progress" class="muted" style="margin-top: 10px">
+      <div v-if="progress && selectedPreparedId" class="muted" style="margin-top: 10px">
         {{ progress.filesDone }} / {{ progress.fileCount || '?' }} files · {{ (progress.bytes / 1e6).toFixed(1) }} MB
         <span class="mono">{{ progress.current }}</span>
       </div>
@@ -160,29 +88,20 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import {
-  backendConfigured,
-  callFunction,
-  getSession,
-  googleAuthConfigured,
-  type ProctorSession,
-  signIn,
-  signInWithGoogle,
-  signOut,
-} from '../offline/auth';
+import StaffNav from '../components/StaffNav.vue';
+import { backendConfigured, callFunction, getSession, type ProctorSession } from '../offline/auth';
 import { logError, logInfo } from '../offline/sentry';
 import { listPacks, putPack } from '../offline/db';
 import { deviceInfo } from '../offline/device';
 import { deletePack, type DownloadProgress, downloadPack, getActivePackId, markPackError, setActivePackId } from '../offline/packStore';
+import {
+  getSelectedSite,
+  loadSiteCatalog,
+  readPackLink,
+  type AdministrationSummary,
+} from '../offline/site';
 import type { PackRecord, PackScope, PackTaskConfig, RosterEntry } from '../offline/types';
 import { ensureOpenVault } from '../offline/vault';
-
-interface AdministrationSummary {
-  id: string;
-  name: string;
-  dateClosed: string | null;
-  tasks: string[];
-}
 
 interface ProvisionResult {
   status: string;
@@ -200,38 +119,31 @@ interface ProvisionResult {
   };
 }
 
-function readEventLink() {
-  const hash = window.location.hash;
-  if (!hash.startsWith('#/provision')) return null;
-  const qStart = hash.indexOf('?');
-  if (qStart < 0) return null;
-  const query = new URLSearchParams(hash.slice(qStart));
-  const admin = query.get('admin');
-  if (!admin) return null;
-  const orgType = query.get('orgType');
-  const orgId = query.get('orgId');
-  return {
-    admin,
-    orgType: orgType === 'school' || orgType === 'cohort' ? orgType : null,
-    orgId,
-  };
+interface PreparedPack {
+  packId: string;
+  administrationId: string;
+  assignmentName: string;
+  orgType: PackScope['orgType'];
+  orgId: string;
+  orgName: string;
+  siteId: string;
+  siteName: string;
 }
 
-const eventLink = ref(readEventLink());
+const eventLink = ref(readPackLink());
 const eventApplying = ref(false);
-const eventAdminName = computed(
-  () => administrations.value.find((item) => item.id === eventLink.value?.admin)?.name ?? '',
-);
-const eventScopeName = computed(() => selectedScope.value?.name ?? '');
+const preparedPacks = ref<PreparedPack[]>([]);
+const preparedLoading = ref(false);
+const selectedPreparedId = ref<string | null>(null);
+const selectedSite = getSelectedSite();
+const selectedSiteId = ref<string | null>(selectedSite?.id ?? null);
+const currentSiteLabel = computed(() => selectedSite?.name || selectedSiteId.value || '');
 
 const session = ref<ProctorSession | null>(getSession());
-const email = ref('');
-const password = ref('');
 const administrations = ref<AdministrationSummary[]>([]);
 const selectedId = ref<string | null>(null);
 const scopes = ref<PackScope[]>([]);
 const selectedScope = ref<PackScope | null>(null);
-const scopesLoading = ref(false);
 const scopesLoaded = ref(false);
 const packs = ref<PackRecord[]>([]);
 const activeId = ref<string | null>(getActivePackId());
@@ -250,44 +162,41 @@ const canProvision = computed(
     (scopes.value.length === 0 || selectedScope.value !== null),
 );
 
+const splash = computed(() => {
+  if (progress.value) return '';
+  if (preparedLoading.value || eventApplying.value) return 'Loading packs for this site…';
+  return '';
+});
+
 onMounted(() => {
   window.addEventListener('online', () => (online.value = true));
   window.addEventListener('offline', () => (online.value = false));
   void ensureOpenVault();
   void refreshPacks();
+  if (!getSession() || !getSelectedSite()) {
+    window.location.hash = '#/site';
+  }
 });
 
 watch(
   session,
   async (value) => {
-    if (value && eventLink.value) await applyEventLink();
+    if (!value || !selectedSiteId.value) return;
+    await refreshSiteCatalog();
+    if (eventLink.value) applyEventLink();
   },
   { immediate: true },
 );
 
-async function applyEventLink() {
+function applyEventLink() {
   const ev = eventLink.value;
-  if (!ev || !session.value) return;
-  eventApplying.value = true;
-  error.value = '';
-  try {
-    await loadAdministrations();
-    if (!administrations.value.some((item) => item.id === ev.admin)) {
-      error.value = 'This account cannot see that assignment. Sign in as a site admin for this event.';
-      return;
-    }
-    await selectAdministration(ev.admin);
-    if (ev.orgType && ev.orgId) {
-      const scope = scopes.value.find((item) => item.orgType === ev.orgType && item.orgId === ev.orgId);
-      if (!scope) {
-        error.value = 'That cohort is not on this assignment. Add the cohort to the assignment, then open the link again.';
-        return;
-      }
-      selectedScope.value = scope;
-    }
-  } finally {
-    eventApplying.value = false;
-  }
+  if (!ev) return;
+  const match = preparedPacks.value.find(
+    (item) =>
+      item.administrationId === ev.admin &&
+      (!ev.orgId || (item.orgType === ev.orgType && item.orgId === ev.orgId)),
+  );
+  if (match) selectPrepared(match);
 }
 
 async function refreshPacks() {
@@ -295,80 +204,69 @@ async function refreshPacks() {
   activeId.value = getActivePackId();
 }
 
-async function doSignIn() {
-  error.value = '';
-  busy.value = true;
-  try {
-    session.value = await signIn(email.value, password.value);
-    password.value = '';
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err);
-  } finally {
-    busy.value = false;
-  }
+function selectPrepared(pack: PreparedPack) {
+  selectedPreparedId.value = pack.packId;
+  selectedId.value = pack.administrationId;
+  selectedScope.value = {
+    orgType: pack.orgType,
+    orgId: pack.orgId,
+    name: pack.orgName,
+    siteId: pack.siteId,
+  };
+  scopesLoaded.value = true;
 }
 
-async function doGoogleSignIn() {
+async function refreshSiteCatalog() {
   error.value = '';
-  busy.value = true;
+  preparedLoading.value = true;
   try {
-    session.value = await signInWithGoogle();
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err);
-  } finally {
-    busy.value = false;
-  }
-}
-
-function doSignOut() {
-  signOut();
-  session.value = null;
-  administrations.value = [];
-  selectedId.value = null;
-  scopes.value = [];
-  selectedScope.value = null;
-  scopesLoaded.value = false;
-}
-
-async function loadAdministrations() {
-  error.value = '';
-  message.value = '';
-  busy.value = true;
-  try {
-    const res = await callFunction<{ status: string; data: Array<Record<string, unknown>> }>('getAdministrations', {
-      idsOnly: false,
-    });
-    administrations.value = (res.data ?? []).map((a) => ({
-      id: String(a.id),
-      name: String(a.publicName ?? a.name ?? a.id),
-      dateClosed: toDateString(a.dateClosed),
-      tasks: Array.isArray(a.assessments) ? a.assessments.map((x: { taskId?: string }) => String(x.taskId)) : [],
-    }));
-    if (!administrations.value.length) message.value = 'No open administrations are visible to this account.';
+    const catalog = await loadSiteCatalog();
+    administrations.value = catalog.administrations;
+    await loadPacksForSite();
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
     logError('getAdministrations failed', err);
   } finally {
-    busy.value = false;
+    preparedLoading.value = false;
   }
 }
 
-async function selectAdministration(id: string) {
-  selectedId.value = id;
-  selectedScope.value = null;
-  scopes.value = [];
-  scopesLoaded.value = false;
-  scopesLoading.value = true;
-  error.value = '';
+async function loadPacksForSite() {
+  const siteId = selectedSiteId.value;
+  preparedPacks.value = [];
+  if (!siteId) return;
+  eventApplying.value = true;
   try {
-    const res = await callFunction<{ status: string; scopes: PackScope[] }>('listOfflineScopes', { administrationId: id });
-    scopes.value = res.scopes ?? [];
-    scopesLoaded.value = true;
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err);
-    logError('listOfflineScopes failed', err, { administrationId: id });
+    const siteAdmins = administrations.value.filter((item) => item.districts.includes(siteId));
+    const groups = await Promise.all(
+      siteAdmins.map(async (admin) => {
+        try {
+          const res = await callFunction<{ status: string; scopes: PackScope[] }>('listOfflineScopes', {
+            administrationId: admin.id,
+          });
+          return (res.scopes ?? [])
+            .filter((scope) => !scope.siteId || scope.siteId === siteId)
+            .map((scope) => ({
+              packId: `${admin.id}_${scope.orgType}_${scope.orgId}`,
+              administrationId: admin.id,
+              assignmentName: admin.name,
+              orgType: scope.orgType,
+              orgId: scope.orgId,
+              orgName: scope.name,
+              siteId: scope.siteId || siteId,
+              siteName: currentSiteLabel.value || siteId,
+            }));
+        } catch (err) {
+          logError('listOfflineScopes failed', err, { administrationId: admin.id });
+          return [] as PreparedPack[];
+        }
+      }),
+    );
+    preparedPacks.value = groups.flat().sort((a, b) => {
+      return a.assignmentName.localeCompare(b.assignmentName) || a.orgName.localeCompare(b.orgName);
+    });
   } finally {
-    scopesLoading.value = false;
+    eventApplying.value = false;
   }
 }
 
@@ -446,31 +344,4 @@ async function remove(packId: string) {
 function scopeLabel(p: { scope?: PackScope | null }) {
   return p.scope ? `${p.scope.orgType} ${p.scope.name}` : 'whole site';
 }
-
-function toDateString(value: unknown): string | null {
-  if (!value) return null;
-  if (typeof value === 'string') return value.slice(0, 10);
-  const v = value as { _seconds?: number; seconds?: number };
-  const secs = v._seconds ?? v.seconds;
-  return typeof secs === 'number' ? new Date(secs * 1000).toISOString().slice(0, 10) : null;
-}
 </script>
-
-<style scoped>
-.sign-in-stack {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 10px;
-}
-.sign-in-or {
-  margin: 0;
-}
-input {
-  font: inherit;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  min-width: 200px;
-}
-</style>

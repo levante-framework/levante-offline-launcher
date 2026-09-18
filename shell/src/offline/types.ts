@@ -22,9 +22,9 @@ export interface PackTaskConfig {
   variantParams: Record<string, unknown>;
 }
 
-/** The school or cohort a device is provisioned for. */
+/** The school, classroom, or cohort a device is provisioned for. */
 export interface PackScope {
-  orgType: 'school' | 'cohort';
+  orgType: 'school' | 'class' | 'cohort';
   orgId: string;
   name: string;
   siteId: string;

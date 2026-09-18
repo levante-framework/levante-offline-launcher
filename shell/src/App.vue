@@ -11,6 +11,7 @@
     <TaskView v-else-if="route.name === 'task'" :task-id="route.taskId" />
     <SyncView v-else-if="route.name === 'sync'" />
     <ProvisionView v-else-if="route.name === 'provision'" />
+    <SiteView v-else-if="route.name === 'site'" />
     <FairView v-else-if="route.name === 'fair'" />
   </template>
 </template>
@@ -24,6 +25,7 @@ import FairView from './views/FairView.vue';
 import LockView from './views/LockView.vue';
 import ProvisionView from './views/ProvisionView.vue';
 import RosterView from './views/RosterView.vue';
+import SiteView from './views/SiteView.vue';
 import SyncView from './views/SyncView.vue';
 import TaskView from './views/TaskView.vue';
 
@@ -59,6 +61,7 @@ const route = computed(() => {
   // In child mode the proctor screens are unreachable by URL as well as by link.
   if (hash.value.startsWith('#/sync') && !isChildMode()) return { name: 'sync' as const, taskId: '' };
   if (hash.value.startsWith('#/provision') && !isChildMode()) return { name: 'provision' as const, taskId: '' };
+  if (hash.value.startsWith('#/site') && !isChildMode()) return { name: 'site' as const, taskId: '' };
   if (hash.value.startsWith('#/fair') && !isChildMode()) return { name: 'fair' as const, taskId: '' };
   return { name: 'roster' as const, taskId: '' };
 });

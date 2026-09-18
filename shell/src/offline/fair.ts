@@ -1,5 +1,7 @@
 import { type DBSchema, type IDBPDatabase, openDB } from 'idb';
+import { getSession } from './auth';
 import { countRuns, listPacks } from './db';
+import { getSelectedSite } from './site';
 import { vaultExists } from './vault';
 
 const FAIR_DB = 'levante-offline-fair';
@@ -60,7 +62,7 @@ export async function loadFairProgress(): Promise<FairProgress> {
   }
   const { total, pending } = await countRuns();
   return {
-    siteReady: await isFairSiteReady(),
+    siteReady: Boolean(getSession() && getSelectedSite()) || (await isFairSiteReady()),
     provisioned,
     packName,
     assessed: total > 0,

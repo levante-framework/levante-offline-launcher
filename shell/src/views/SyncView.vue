@@ -1,14 +1,12 @@
 <template>
   <div class="page">
-    <h1>Sync &amp; export</h1>
+    <h1>4 · Sync</h1>
     <p class="muted">
       Device <span class="mono">{{ deviceId }}</span> · {{ runs.length }} run(s) stored locally ·
       {{ online ? 'online' : 'offline' }}
     </p>
+    <StaffNav current="sync" />
     <div class="row">
-      <a href="#/"><button type="button">← Roster</button></a>
-      <a href="#/provision"><button type="button">Provision</button></a>
-      <a href="#/fair"><button type="button">Science fair</button></a>
       <button type="button" @click="exportAll" :disabled="!runs.length">Download JSON export</button>
       <button type="button" @click="clearSynced" :disabled="!synced.length">Delete {{ synced.length }} synced</button>
     </div>
@@ -16,6 +14,10 @@
     <div class="card">
       <h2 style="margin-top: 0">Sync to server</h2>
       <p class="muted" v-if="!backendConfigured">This build has no backend configured; use the JSON export.</p>
+      <div v-else-if="syncing" class="spinner-overlay" role="status" aria-live="polite">
+        <div class="spinner" aria-hidden="true" />
+        <p class="muted">{{ session ? 'Syncing…' : 'Signing in…' }}</p>
+      </div>
       <template v-else>
         <div v-if="session" class="row">
           <span>Signed in as <strong>{{ session.email }}</strong></span>
@@ -96,6 +98,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import StaffNav from '../components/StaffNav.vue';
 import {
   backendConfigured,
   getSession,

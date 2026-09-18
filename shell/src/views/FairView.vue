@@ -1,50 +1,45 @@
 <template>
   <div class="page">
-    <h1>Science fair / museum</h1>
+    <h1>Step-by-step</h1>
     <p class="muted">
-      Staff runbook for one tablet. The site, children, and administration must already exist in
-      this project's dashboard. Kids never see this page.
+      Staff runbook for one tablet. The site, children, and assignment must already exist in this
+      project's dashboard. Children never see this page.
     </p>
-    <div class="row">
-      <a href="#/"><button type="button">← Roster</button></a>
-      <a href="#/provision"><button type="button">Provision</button></a>
-      <a href="#/sync"><button type="button">Sync &amp; export</button></a>
-    </div>
+    <StaffNav current="fair" />
 
     <div class="card">
       <div class="row" style="justify-content: space-between">
-        <h2 style="margin: 0">1 · Site is ready</h2>
+        <h2 style="margin: 0">1 · Select Site</h2>
         <span class="pill" :class="progress.siteReady ? 'ok' : 'warn'">{{
           progress.siteReady ? 'Done' : 'Do this first'
         }}</span>
       </div>
       <p class="muted">
-        The researcher dashboard how-to is on a private admin-dev preview (not the main dashboard):
+        Sign in on this tablet and pick the site you are collecting for. Researchers with access to
+        more than one site must choose before provisioning. The site, children, and assignment must
+        already exist in the
         <a
           href="https://hs-levante-admin-dev--science-fair-rcdjddph.web.app/science-fair"
           target="_blank"
           rel="noreferrer"
-          >science-fair preview</a
-        >. Create or reuse a site, children, and an administration there. This launcher does not
-        create any of that.
+          >field-collection preview</a
+        >. This launcher does not create any of that.
       </p>
-      <label class="row">
-        <input type="checkbox" :checked="progress.siteReady" @change="toggleSiteReady" />
-        I have an administration ready to provision
-      </label>
+      <p v-if="siteLabel" class="notice">Current site: {{ siteLabel }}</p>
+      <a href="#/site"><button type="button" class="primary">Open select site</button></a>
     </div>
 
     <div class="card">
       <div class="row" style="justify-content: space-between">
-        <h2 style="margin: 0">2 · Provision this tablet</h2>
+        <h2 style="margin: 0">2 · Provision</h2>
         <span class="pill" :class="progress.provisioned ? 'ok' : 'warn'">{{
           progress.provisioned ? 'Pack on device' : 'Not provisioned'
         }}</span>
       </div>
       <p class="muted">
-        Online. Open the pack link from the wizard on this tablet (any network), sign in, and tap
-        <strong>Download pack</strong>. Stay on the network until it finishes. Science-fair tablets
-        do not use a device PIN.
+        Online. After the site is selected, open Provision (or the pack link from the wizard) and
+        tap <strong>Download pack</strong>. Stay on the network until it finishes. Field-collection
+        tablets do not use a device PIN.
       </p>
       <p v-if="progress.packName" class="notice">Current pack: {{ progress.packName }}</p>
       <a href="#/provision"><button type="button" class="primary">Open provision</button></a>
@@ -52,28 +47,28 @@
 
     <div class="card">
       <div class="row" style="justify-content: space-between">
-        <h2 style="margin: 0">3 · Run the kiosk</h2>
+        <h2 style="margin: 0">3 · Roster</h2>
         <span class="pill" :class="progress.assessed ? 'ok' : 'warn'">{{
           progress.assessed ? `${progress.runCount} run(s) on device` : 'No runs yet'
         }}</span>
       </div>
       <p class="muted">
-        One tablet, many slots. You do not provision or sign in again between visitors. Play does
-        not need a network.
+        One tablet holds that group. You do not provision or sign in again between children. Play
+        does not need a network — at a school site or house to house.
       </p>
       <ol class="muted" style="padding-left: 1.2rem; margin: 0 0 12px">
-        <li>On the roster, tap <strong>Start child mode</strong> so visitors cannot open Provision or Sync.</li>
-        <li>Each visitor taps <strong>one unused name</strong>, then a task.</li>
-        <li>When the task finishes, the roster returns. The next visitor taps a <strong>different</strong> name.</li>
-        <li>Use the task counts to see which slots are still free.</li>
-        <li>Stay in child mode all day. Leave it only to sync: tap <strong>On-site Researcher</strong>, then Exit child mode.</li>
+        <li>On the roster, tap <strong>Start child mode</strong> so children cannot open Provision or Sync.</li>
+        <li>Each child taps <strong>their own name</strong>, then a task.</li>
+        <li>When the task finishes, the roster returns. The next child taps a <strong>different</strong> name.</li>
+        <li>Use the task counts to see who still has work left.</li>
+        <li>Stay in child mode while collecting. Leave it only to sync: tap <strong>On-site Researcher</strong>, then Exit child mode.</li>
       </ol>
       <a href="#/"><button type="button" class="primary">Open roster</button></a>
     </div>
 
     <div class="card">
       <div class="row" style="justify-content: space-between">
-        <h2 style="margin: 0">4 · Retrieve</h2>
+        <h2 style="margin: 0">4 · Sync</h2>
         <span class="pill" :class="progress.retrieved ? 'ok' : 'warn'">{{
           progress.retrieved
             ? 'All local runs synced'
@@ -95,7 +90,9 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue';
-import { loadFairProgress, setFairSiteReady, type FairProgress } from '../offline/fair';
+import StaffNav from '../components/StaffNav.vue';
+import { loadFairProgress, type FairProgress } from '../offline/fair';
+import { getSelectedSite } from '../offline/site';
 
 const progress = ref<FairProgress>({
   siteReady: false,
@@ -107,14 +104,11 @@ const progress = ref<FairProgress>({
   retrieved: false,
 });
 
+const siteLabel = ref(getSelectedSite()?.name ?? '');
+
 async function refresh() {
   progress.value = await loadFairProgress();
-}
-
-async function toggleSiteReady(event: Event) {
-  const checked = (event.target as HTMLInputElement).checked;
-  await setFairSiteReady(checked);
-  progress.value = { ...progress.value, siteReady: checked };
+  siteLabel.value = getSelectedSite()?.name ?? '';
 }
 
 onMounted(() => {
