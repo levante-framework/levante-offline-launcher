@@ -34,9 +34,11 @@
           <div class="muted">{{ p.orgName }} · {{ p.orgType }}</div>
         </button>
       </div>
-      <p v-else-if="selectedSiteId" class="notice">
-        No assignments with a cohort, classroom, or school were found on this site.
+      <p v-else-if="siteAdminCount" class="notice">
+        This site has {{ siteAdminCount }} assignment(s), but none list a cohort, classroom, or
+        school. Add one of those on the dashboard — a site-only assignment cannot be provisioned.
       </p>
+      <p v-else-if="selectedSiteId" class="notice">No assignments were found for this site.</p>
       <p v-else class="notice">This account has no site assignments to provision.</p>
       <div class="row" style="margin-top: 12px" v-if="selectedPreparedId">
         <button type="button" class="primary big" :disabled="!canProvision" @click="provision">
@@ -49,6 +51,7 @@
       </div>
     </div>
 
+    <div v-if="diskWarning" class="muted" style="margin-top: 12px">{{ diskWarning }}</div>
     <div v-if="message" class="notice" style="margin-top: 12px">{{ message }}</div>
     <div v-if="error" class="error" style="margin-top: 12px">{{ error }}</div>
 
@@ -76,6 +79,14 @@
             </td>
             <td class="row">
               <button type="button" @click="activate(p.packId)" :disabled="p.status !== 'ready' || p.packId === activeId">Use</button>
+              <button
+                v-if="p.status === 'error' || p.status === 'downloading'"
+                type="button"
+                @click="resume(p.packId)"
+                :disabled="busy"
+              >
+                Resume
+              </button>
               <button type="button" @click="remove(p.packId)" :disabled="busy">Delete</button>
             </td>
           </tr>
@@ -91,9 +102,10 @@ import { computed, onMounted, ref, watch } from 'vue';
 import StaffNav from '../components/StaffNav.vue';
 import { backendConfigured, callFunction, getSession, type ProctorSession } from '../offline/auth';
 import { logError, logInfo } from '../offline/sentry';
-import { listPacks, putPack } from '../offline/db';
+import { getPack, listPacks, putPack } from '../offline/db';
 import { deviceInfo } from '../offline/device';
-import { deletePack, type DownloadProgress, downloadPack, getActivePackId, markPackError, setActivePackId } from '../offline/packStore';
+import { deletePack, type DownloadProgress, downloadPack, getActivePackId, markPackError, resumeDownload, setActivePackId } from '../offline/packStore';
+import { storageHeadroom } from '../offline/storage';
 import {
   getSelectedSite,
   loadSiteCatalog,
@@ -138,6 +150,11 @@ const selectedPreparedId = ref<string | null>(null);
 const selectedSite = getSelectedSite();
 const selectedSiteId = ref<string | null>(selectedSite?.id ?? null);
 const currentSiteLabel = computed(() => selectedSite?.name || selectedSiteId.value || '');
+const siteAdminCount = computed(() => {
+  const siteId = selectedSiteId.value;
+  if (!siteId) return 0;
+  return administrations.value.filter((item) => item.districts.includes(siteId)).length;
+});
 
 const session = ref<ProctorSession | null>(getSession());
 const administrations = ref<AdministrationSummary[]>([]);
@@ -150,6 +167,7 @@ const activeId = ref<string | null>(getActivePackId());
 const progress = ref<DownloadProgress | null>(null);
 const busy = ref(false);
 const message = ref('');
+const diskWarning = ref('');
 const error = ref('');
 const online = ref(navigator.onLine);
 
@@ -270,14 +288,28 @@ async function loadPacksForSite() {
   }
 }
 
+const MIN_FREE_BYTES = 80 * 1e6;
+
+async function warnIfLowDisk() {
+  diskWarning.value = '';
+  const headroom = await storageHeadroom();
+  if (!headroom || headroom.free >= MIN_FREE_BYTES) return;
+  diskWarning.value = `This tablet reports ${(headroom.free / 1e6).toFixed(0)} MB free (of ${(headroom.quota / 1e6).toFixed(0)} MB). A pack often needs 50–300 MB — free space if the download fails.`;
+}
+
+function provisionedNotice(done: PackRecord) {
+  return `Provisioned "${done.name}" for ${scopeLabel(done)}: ${done.children.length} children, ${done.tasks.length} tasks, ${done.fileCount} files (${(done.totalBytes / 1e6).toFixed(1)} MB). This device can now assess offline.`;
+}
+
 async function provision() {
-  if (!selectedId.value || !session.value) return;
+  if (busy.value || !selectedId.value || !session.value) return;
   error.value = '';
   message.value = '';
   busy.value = true;
   progress.value = { filesDone: 0, fileCount: 0, bytes: 0, current: 'asking the server for the roster…' };
   let packId: string | null = null;
   try {
+    await warnIfLowDisk();
     const res = await callFunction<ProvisionResult>('provisionOfflinePack', {
       administrationId: selectedId.value,
       scope: selectedScope.value ? { orgType: selectedScope.value.orgType, orgId: selectedScope.value.orgId } : null,
@@ -285,17 +317,19 @@ async function provision() {
     });
     const p = res.pack;
     packId = p.packId;
+    const existing = await getPack(p.packId);
     const record: PackRecord = {
       ...p,
       deviceNowMs: Date.now(),
-      provisionedAt: new Date().toISOString(),
+      provisionedAt: existing?.provisionedAt ?? new Date().toISOString(),
       provisionedBy: session.value.email,
       status: 'downloading',
       error: null,
-      fileCount: 0,
-      filesDone: 0,
-      totalBytes: 0,
-      corpora: {},
+      fileCount: existing?.fileCount ?? 0,
+      filesDone: existing?.filesDone ?? 0,
+      totalBytes: existing?.totalBytes ?? 0,
+      corpora: existing?.corpora ?? {},
+      bundles: existing?.bundles,
     };
     await putPack(record);
     await refreshPacks();
@@ -304,6 +338,7 @@ async function provision() {
       administrationId: p.administrationId,
       children: p.children.length,
       tasks: p.tasks.length,
+      resumeFrom: record.filesDone,
     });
     const done = await downloadPack(record, (prog) => (progress.value = prog));
     setActivePackId(done.packId);
@@ -314,11 +349,34 @@ async function provision() {
       tasks: done.tasks.length,
       files: done.fileCount,
     });
-    message.value = `Provisioned "${done.name}" for ${scopeLabel(done)}: ${done.children.length} children, ${done.tasks.length} tasks, ${done.fileCount} files (${(done.totalBytes / 1e6).toFixed(1)} MB). This device can now assess offline.`;
+    message.value = provisionedNotice(done);
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
     logError('provision failed', err, { administrationId: selectedId.value ?? '', packId: packId ?? '' });
     if (packId) await markPackError(packId, err);
+  } finally {
+    busy.value = false;
+    progress.value = null;
+    await refreshPacks();
+  }
+}
+
+async function resume(packId: string) {
+  if (busy.value) return;
+  error.value = '';
+  message.value = '';
+  busy.value = true;
+  progress.value = { filesDone: 0, fileCount: 0, bytes: 0, current: 'resuming…' };
+  try {
+    await warnIfLowDisk();
+    const done = await resumeDownload(packId, (prog) => (progress.value = prog));
+    setActivePackId(done.packId);
+    logInfo('provision resumed', { packId: done.packId, files: done.fileCount });
+    message.value = provisionedNotice(done);
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+    logError('provision resume failed', err, { packId });
+    await markPackError(packId, err);
   } finally {
     busy.value = false;
     progress.value = null;

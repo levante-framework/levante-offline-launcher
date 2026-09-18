@@ -170,6 +170,7 @@ function doSignOut() {
 }
 
 async function sync() {
+  if (syncing.value) return;
   syncing.value = true;
   message.value = '';
   error.value = '';

@@ -126,6 +126,12 @@ export async function downloadPack(pack: PackRecord, onProgress?: (p: DownloadPr
   return { ...pack, ...done } as PackRecord;
 }
 
+export async function resumeDownload(packId: string, onProgress?: (p: DownloadProgress) => void): Promise<PackRecord> {
+  const pack = await getPack(packId);
+  if (!pack) throw new Error('That pack is not on this device.');
+  return downloadPack(pack, onProgress);
+}
+
 export async function markPackError(packId: string, error: unknown) {
   await updatePack(packId, { status: 'error', error: error instanceof Error ? error.message : String(error) });
 }
@@ -149,6 +155,8 @@ async function downloadFromBundles(pack: PackRecord, { id, progress, report }: S
     if (!summary) throw new Error(`No bundle for ${unit} in ${BUNDLE_BASE}/catalog.json — build it with pack-builder/build-bundles.mjs`);
     indexes.push((await fetchJson(`${BUNDLE_BASE}/${unit}/${summary.bundleId}.json`)) as BundleIndex);
   }
+  const expectedBytes = indexes.reduce((n, ix) => n + ix.bytes, 0);
+  if (expectedBytes) await updatePack(id, { totalBytes: expectedBytes });
 
   // Variants can ask for a corpus other than the bundled default; those are fetched singly.
   const extraCorpora: Array<{ taskId: string; corpus: string }> = [];
@@ -163,7 +171,13 @@ async function downloadFromBundles(pack: PackRecord, { id, progress, report }: S
   const bundles: NonNullable<PackRecord['bundles']> = {};
   const corpora: PackRecord['corpora'] = {};
   for (const index of indexes) {
-    await downloadBundle(id, index, progress, report, pack.filesDone > 0);
+    await downloadBundle(
+      id,
+      index,
+      progress,
+      report,
+      pack.filesDone > 0 || pack.fileCount > 0 || pack.status === 'error' || pack.status === 'downloading',
+    );
     bundles[index.unit] = { bundleId: index.bundleId, bytes: index.bytes, files: index.entries.length };
     Object.assign(corpora, index.corpora ?? {});
   }

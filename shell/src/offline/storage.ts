@@ -131,6 +131,18 @@ export function platformLabel() {
   return `${Capacitor.isNativePlatform() ? `native ${Capacitor.getPlatform()}` : 'browser'} · ${packStorage.kind} storage`;
 }
 
+/** Remaining origin quota, if the browser exposes it. Safari often under-reports. */
+export async function storageHeadroom(): Promise<{ usage: number; quota: number; free: number } | null> {
+  try {
+    const est = await navigator.storage?.estimate?.();
+    if (!est?.quota) return null;
+    const usage = est.usage ?? 0;
+    return { usage, quota: est.quota, free: Math.max(0, est.quota - usage) };
+  } catch {
+    return null;
+  }
+}
+
 function toBase64(bytes: ArrayBuffer): string {
   const view = new Uint8Array(bytes);
   let binary = '';
