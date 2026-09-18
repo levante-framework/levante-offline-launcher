@@ -412,9 +412,24 @@ async function launcherSignIn(driver) {
   await waitFor(driver, () => /Signed in as/i.test(document.body?.innerText || ''), null, 60_000, 'signed in');
 }
 
+async function continueFromSiteIfNeeded(driver) {
+  const onSite = await driver.evaluate(() => /Which site\?/i.test(document.body?.innerText || ''));
+  if (!onSite) return;
+  const picked = await driver.evaluate(() => {
+    const selected = document.querySelector('button.child.selected') || document.querySelector('button.child');
+    if (!selected) return '';
+    selected.click();
+    return (selected.textContent || '').replace(/\s+/g, ' ').trim();
+  });
+  console.log(`   site: ${picked || '(none)'}`);
+  await clickText(driver, 'Continue to provision');
+  await waitFor(driver, () => /Packs for this site/i.test(document.body?.innerText || ''), null, 60_000, 'packs');
+}
+
 async function waitForDownloadEnabled(driver, packLink) {
   const deadline = Date.now() + 6 * 60_000;
   while (Date.now() < deadline) {
+    await continueFromSiteIfNeeded(driver).catch(() => {});
     const enabled = await driver.evaluate(() => {
       const el = [...document.querySelectorAll('button')].find((e) =>
         /Download pack|Provision this device/i.test(e.textContent || ''),
@@ -425,7 +440,7 @@ async function waitForDownloadEnabled(driver, packLink) {
     const err = await driver.evaluate(() => document.querySelector('.error')?.textContent?.trim() || '');
     console.log(`   waiting for assignment/cohort to finish processing… ${err.slice(0, 80)}`);
     await sleep(8_000);
-    const stillThere = await driver.evaluate(() => /Download pack|Provision this device|Signed in as/i.test(document.body?.innerText || ''));
+    const stillThere = await driver.evaluate(() => /Download pack|Provision this device|Signed in as|Which site/i.test(document.body?.innerText || ''));
     if (!stillThere) {
       await driver.goto(packLink);
       await launcherSignIn(driver);

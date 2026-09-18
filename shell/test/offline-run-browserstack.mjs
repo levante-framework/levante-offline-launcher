@@ -47,6 +47,7 @@ const TASKS = String(args.tasks || args.task || 'hearts-and-flowers').split(',')
 const CHILD = args.child || 'Ada';
 const ADMINISTRATION = args.administration || 'Offline spike';
 const SCOPE = args.scope || 'Sunrise';
+const SITE = args.site || 'Spike demo';
 const MAX_SECONDS = Number(args['max-seconds'] || 240);
 const IDLE_AFTER_PROVISION_MS = Number(args['idle-ms'] || 90_000);
 const [PROCTOR_EMAIL, PROCTOR_PASSWORD] = String(args.proctor || 'ra@levante.test:ra123456').split(':');
@@ -406,15 +407,15 @@ const idb = {
 };
 
 try {
-  console.log(`1. provisioning at ${URL} as ${PROCTOR_EMAIL} on ${DEVICE_NAME}…`);
-  await page.goto(`${URL}/#/provision`, { waitUntil: 'domcontentloaded', timeout: 120_000 });
+  console.log(`1. select site + provision at ${URL} as ${PROCTOR_EMAIL} on ${DEVICE_NAME}…`);
+  await page.goto(`${URL}/#/site`, { waitUntil: 'domcontentloaded', timeout: 120_000 });
   await page.waitForTimeout(3000);
   await dumpPage(page, 'after-goto');
   await page.screenshot({ path: path.join(OUT, '0-landed.png') }).catch(() => {});
-  const landed = await page.evaluate(() => /Device PIN|Signed in|Provision/i.test(document.body?.innerText || ''));
+  const landed = await page.evaluate(() => /Device PIN|Signed in|Select Site|Provision/i.test(document.body?.innerText || ''));
   if (!landed) {
     console.log('   retrying navigation…');
-    await page.goto(`${URL}/#/provision`, { waitUntil: 'load', timeout: 120_000 });
+    await page.goto(`${URL}/#/site`, { waitUntil: 'load', timeout: 120_000 });
     await page.waitForTimeout(4000);
     await dumpPage(page, 'after-retry');
   }
@@ -450,15 +451,14 @@ try {
   record('sign-in', 'pass', PROCTOR_EMAIL);
   await dumpPage(page, 'signed-in');
 
-  await clickText(page, 'administrations');
+  await waitForText(page, 'Which site', 60_000);
+  await clickText(page, SITE);
+  await clickText(page, 'Continue to provision');
+  await waitForText(page, 'Packs for this site', 60_000);
   await waitForText(page, ADMINISTRATION, 60_000);
   await clickText(page, ADMINISTRATION);
-  if (SCOPE !== 'site') {
-    await waitForText(page, SCOPE, 60_000);
-    await clickText(page, SCOPE);
-  }
   const t0p = Date.now();
-  await clickText(page, 'Provision this device');
+  await clickText(page, 'Download pack');
   try {
     await waitForText(page, 'Provisioned', 10 * 60_000);
   } catch (e) {

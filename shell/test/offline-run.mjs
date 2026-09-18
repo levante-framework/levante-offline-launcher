@@ -17,6 +17,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import { _android as android, chromium, webkit } from 'playwright';
+import { provisionFromSite } from './lib/provision.mjs';
 
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, a, i, arr) => {
@@ -87,8 +88,8 @@ function waitForPort(port, timeoutMs) {
 }
 const CHILD = args.child || 'Ada';
 const ADMINISTRATION = args.administration || 'Offline spike';
-// The school/cohort the device is provisioned for (text of its button); "site" = no scope offered.
 const SCOPE = args.scope || 'Sunrise';
+const SITE = args.site || 'Spike demo';
 const MAX_SECONDS = Number(args['max-seconds'] || 240);
 const [PROCTOR_EMAIL, PROCTOR_PASSWORD] = String(args.proctor || 'proctor@levante.test:proctor123').split(':');
 const PIN = args.pin || '2468';
@@ -164,38 +165,19 @@ const idb = {
     }),
 };
 
-// 1. Provision online.
-console.log(`1. provisioning at ${URL} as ${PROCTOR_EMAIL}…`);
-await page.goto(`${URL}/#/provision`, { waitUntil: 'load' });
-// The shell needs its service worker before it can serve a pack from Cache Storage (browsers,
-// and the Android app); the iOS app serves packs from the filesystem and has none.
-if (await page.evaluate(() => 'serviceWorker' in navigator)) {
-  await page.waitForFunction(() => navigator.serviceWorker?.getRegistration().then((r) => !!r?.active), null, { timeout: 60_000 });
-}
-if (await page.$('input[name=pin]')) {
-  await page.fill('input[name=pin]', PIN);
-  await page.fill('input[name=pinConfirm]', PIN);
-  await page.click('button:has-text("Set PIN")');
-  await page.waitForSelector('text=Device PIN set', { timeout: 30_000 });
-  console.log('   device vault created (PIN set)');
-}
-await page.fill('input[type=email]', PROCTOR_EMAIL);
-await page.fill('input[type=password]', PROCTOR_PASSWORD);
-await page.click('button[type=submit]');
-await page.waitForSelector('text=Signed in as', { timeout: 30_000 });
-await page.click('button:has-text("administrations")');
-await page.waitForSelector(`button.child:has-text("${ADMINISTRATION}")`, { timeout: 60_000 });
-await page.click(`button.child:has-text("${ADMINISTRATION}")`);
-if (SCOPE !== 'site') {
-  await page.waitForSelector(`button.scope:has-text("${SCOPE}")`, { timeout: 60_000 });
-  await page.click(`button.scope:has-text("${SCOPE}")`);
-  console.log(`   scope: ${await page.evaluate(() => document.querySelector('button.scope.selected')?.textContent?.trim().replace(/\s+/g, ' '))}`);
-}
-const t0p = Date.now();
-await page.click('button:has-text("Provision this device")');
-await page.waitForSelector('.notice:has-text("Provisioned")', { timeout: 15 * 60_000 });
-const provisionMsg = await page.evaluate(() => document.querySelector('.notice')?.textContent?.trim());
-console.log(`   ${provisionMsg} (${((Date.now() - t0p) / 1000).toFixed(0)}s)`);
+// 1. Select Site, then download an assignment×group pack.
+console.log(`1. select site + provision at ${URL} as ${PROCTOR_EMAIL}…`);
+const provisioned = await provisionFromSite(page, {
+  appUrl: URL,
+  email: PROCTOR_EMAIL,
+  password: PROCTOR_PASSWORD,
+  site: SITE,
+  assignment: ADMINISTRATION,
+  scope: SCOPE === 'site' ? '' : SCOPE,
+  pin: PIN,
+});
+const provisionMsg = provisioned.message;
+console.log(`   ${provisionMsg} (${provisioned.seconds.toFixed(0)}s)`);
 const cacheStats = await page
   .evaluate(async () => {
     const cache = await caches.open('levante-packs');

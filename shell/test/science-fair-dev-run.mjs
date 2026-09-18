@@ -1,16 +1,17 @@
-// Hosted hs-levante-admin-dev science-fair: dashboard wizard + pack + offline play + sync.
+// Hosted hs-levante-admin-dev field collection: Select Site → pack → offline play → sync.
 // Auth matches Cypress -dev runs: E2E_TEST_EMAIL / E2E_TEST_PASSWORD (never Google SSO).
 //
 //   set -a && source /home/david/levante/levante-support/.env && set +a
 //   cd shell && node test/science-fair-dev-run.mjs
 //
-// Flags: --wizard-only  --headed  --count 10  --tasks hearts-and-flowers,intro
+// Flags: --wizard  --wizard-only  --headed  --max-children 1  --tasks hearts-and-flowers,intro
 
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { launcherPasswordSignIn, provisionFromSite } from './lib/provision.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -50,7 +51,14 @@ const DASHBOARD = (
   process.env.SCIENCE_FAIR_DASHBOARD_URL ||
   'https://hs-levante-admin-dev--science-fair-rcdjddph.web.app'
 ).replace(/\/$/, '');
+const LAUNCHER = (
+  args.launcher ||
+  process.env.SCIENCE_FAIR_LAUNCHER_URL ||
+  'https://hs-levante-admin-dev--offline-launcher-34g4znyg.web.app'
+).replace(/\/$/, '');
 const SITE_NAME = args.site || process.env.E2E_SITE_NAME || process.env.CYPRESS_E2E_SITE_NAME || 'ai-tests';
+const ASSIGNMENT = args.assignment || process.env.SCIENCE_FAIR_ASSIGNMENT || '';
+const SCOPE = args.scope || process.env.SCIENCE_FAIR_SCOPE || '';
 const TASKS = String(args.tasks || 'hearts-and-flowers,intro')
   .split(',')
   .map((t) => t.trim())
@@ -61,6 +69,7 @@ const MIN_AGE = Number(args['min-age'] || 5);
 const MAX_AGE = Number(args['max-age'] || 12);
 const MAX_SECONDS = Number(args['max-seconds'] || 300);
 const LOGIN_ONLY = args['login-only'] === 'true';
+const USE_WIZARD = args.wizard === 'true' || args['wizard-only'] === 'true';
 const WIZARD_ONLY = args['wizard-only'] === 'true';
 const SKIP_USERS = args['skip-users'] === 'true';
 const PACK_LINK = args['pack-link'] || '';
@@ -361,27 +370,7 @@ async function playOffline(page, origin, pids) {
 }
 
 async function launcherSignIn(page) {
-  if (await page.locator('input[type=email]').count()) {
-    await page.fill('input[type=email]', EMAIL);
-    await page.fill('input[type=password]', PASSWORD);
-    await page.click('button[type=submit]');
-    await page.waitForSelector('text=Signed in as', { timeout: 60_000 });
-  }
-}
-
-async function waitForDownloadEnabled(page, packLink) {
-  const download = page.getByRole('button', { name: /Download pack|Provision this device/ });
-  const deadline = Date.now() + 6 * 60_000;
-  while (Date.now() < deadline) {
-    const enabled = await download.isEnabled().catch(() => false);
-    if (enabled) return;
-    const err = (await page.locator('.error').textContent().catch(() => '')) || '';
-    console.log(`   waiting for assignment/cohort to finish processing… ${err.slice(0, 80)}`);
-    await page.waitForTimeout(15_000);
-    await page.goto(packLink, { waitUntil: 'load' });
-    await launcherSignIn(page);
-  }
-  throw new Error('Download pack stayed disabled — assignment may still be processing.');
+  await launcherPasswordSignIn(page, EMAIL, PASSWORD);
 }
 
 const browser = await chromium.launch({
@@ -404,16 +393,17 @@ let ok = false;
 try {
   if (PACK_LINK) {
     const origin = new URL(PACK_LINK).origin;
-    console.log('1. provision from pack link (skip wizard)…');
-    await page.goto(PACK_LINK, { waitUntil: 'load' });
-    await launcherSignIn(page);
-    await waitForDownloadEnabled(page, PACK_LINK);
-    const t0p = Date.now();
-    await page.getByRole('button', { name: /Download pack|Provision this device/ }).click();
-    await page.waitForSelector('.notice, .error', { timeout: 15 * 60_000 });
-    const provisionMsg = await page.evaluate(() => document.querySelector('.notice, .error')?.textContent?.trim());
-    console.log(`   ${provisionMsg} (${((Date.now() - t0p) / 1000).toFixed(0)}s)`);
-    if (await page.locator('.error').count()) throw new Error(provisionMsg || 'provision failed');
+    console.log('1. select site + provision from pack link…');
+    const provisioned = await provisionFromSite(page, {
+      appUrl: origin,
+      email: EMAIL,
+      password: PASSWORD,
+      site: SITE_NAME,
+      assignment: ASSIGNMENT,
+      scope: SCOPE,
+      packLink: PACK_LINK,
+    });
+    console.log(`   ${provisioned.message} (${provisioned.seconds.toFixed(0)}s)`);
     console.log('2. play offline…');
     await page.goto(`${origin}/#/`, { waitUntil: 'load' });
     await page.waitForSelector('text=Who is playing?', { timeout: 30_000 });
@@ -435,6 +425,61 @@ try {
     console.log('3. sync…');
     await page.context().setOffline(false);
     await page.goto(`${origin}/#/sync`, { waitUntil: 'load' });
+    await page.reload({ waitUntil: 'load' });
+    await launcherSignIn(page);
+    if (await page.locator('button.primary:has-text("Sync")').count()) {
+      await page.click('button.primary:has-text("Sync")');
+    }
+    await page.waitForSelector('.notice, .error', { timeout: 180_000 });
+    const syncMsg = await page.evaluate(() => document.querySelector('.notice, .error')?.textContent?.trim());
+    console.log(`   ${syncMsg}`);
+    await shot(page, 'synced');
+    ok =
+      playPids.length > 0 &&
+      mountFailures.length === 0 &&
+      localPairs.length >= playPids.length * TASKS.length &&
+      /synced/i.test(syncMsg || '');
+    console.log(`\nscience_fair -dev: ${ok ? 'PASSED' : 'FAILED'}`);
+    await browser.close();
+    process.exit(ok ? 0 : 1);
+  }
+
+  if (!USE_WIZARD) {
+    console.log(`1. select site + provision at ${LAUNCHER} (site ${SITE_NAME})…`);
+    const provisioned = await provisionFromSite(page, {
+      appUrl: LAUNCHER,
+      email: EMAIL,
+      password: PASSWORD,
+      site: SITE_NAME,
+      assignment: ASSIGNMENT,
+      scope: SCOPE,
+    });
+    console.log(`   ${provisioned.message} (${provisioned.seconds.toFixed(0)}s)`);
+    await shot(page, 'provisioned');
+
+    console.log('2. play offline…');
+    await page.goto(`${LAUNCHER}/#/`, { waitUntil: 'load' });
+    await page.waitForSelector('text=Who is playing?', { timeout: 30_000 });
+    const pids = await page.locator('button.child').evaluateAll((els) =>
+      els
+        .map((el) => {
+          const mono = el.querySelector('.mono')?.textContent || '';
+          const pid = mono.split('·')[0].trim();
+          return pid || el.querySelector('strong')?.textContent?.trim() || '';
+        })
+        .filter(Boolean),
+    );
+    const playPids = PLAY_LIMIT > 0 ? pids.slice(0, PLAY_LIMIT) : pids;
+    if (!playPids.length) throw new Error('roster is empty after provision');
+    const mountFailures = await playOffline(page, LAUNCHER, playPids);
+    const { runs, trials } = await idbAll(page);
+    const localPairs = runs.filter((r) => r.completed && !r.aborted).map((r) => `${r.child.assessmentPid}:${r.taskId}`);
+    console.log(`   local completed pairs: ${localPairs.length} / ${playPids.length * TASKS.length}`);
+    console.log(`   runs=${runs.length} trials=${trials.length} mountFailures=${mountFailures.length}`);
+
+    console.log('3. sync…');
+    await page.context().setOffline(false);
+    await page.goto(`${LAUNCHER}/#/sync`, { waitUntil: 'load' });
     await page.reload({ waitUntil: 'load' });
     await launcherSignIn(page);
     if (await page.locator('button.primary:has-text("Sync")').count()) {
@@ -506,19 +551,17 @@ try {
   }
 
   const origin = new URL(packLink).origin;
-  console.log('5. provision from pack link…');
-  await page.goto(packLink, { waitUntil: 'load' });
-  if (await page.evaluate(() => 'serviceWorker' in navigator)) {
-    await page.waitForFunction(() => navigator.serviceWorker?.getRegistration().then((r) => !!r?.active), null, {
-      timeout: 60_000,
-    }).catch(() => {});
-  }
-  await launcherSignIn(page);
-  await waitForDownloadEnabled(page, packLink);
-  const t0p = Date.now();
-  await page.getByRole('button', { name: /Download pack|Provision this device/ }).click();
-  await page.waitForSelector('.notice', { timeout: 15 * 60_000 });
-  console.log(`   ${await page.evaluate(() => document.querySelector('.notice')?.textContent?.trim())} (${((Date.now() - t0p) / 1000).toFixed(0)}s)`);
+  console.log('5. select site + provision from pack link…');
+  const provisioned = await provisionFromSite(page, {
+    appUrl: origin,
+    email: EMAIL,
+    password: PASSWORD,
+    site: SITE_NAME,
+    assignment: ASSIGNMENT_NAME,
+    scope: GROUP_NAME,
+    packLink,
+  });
+  console.log(`   ${provisioned.message} (${provisioned.seconds.toFixed(0)}s)`);
 
   console.log('6. play offline…');
   const mountFailures = await playOffline(page, origin, childIds);

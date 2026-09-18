@@ -12,28 +12,57 @@ Background and the full feasibility assessment: the "Offline LEVANTE" report
 Numbers from the last verified run: `RESULTS.md`. BrowserStack devices: `RESULTS-browserstack.md`.
 Firestore field changes: `CONTRACT.md`.
 
-## The loop
+## Field collection on a tablet
+
+Staff runbook (navbar): **Step-by-Step → 1 · Select Site → 2 · Provision → 3 · Roster → 4 · Sync**.
+
+```
+1 SELECT SITE (online)            2 PROVISION (online)                 3 ROSTER (offline)              4 SYNC (online)
+researcher signs in (Google       pick one assignment × group pack     Start child mode                leave child mode
+or email/password)                (cohort, classroom, or school)       child taps their name + task    same researcher signs in
+picks the site this tablet        Download pack → roster, tasks,       no network                      syncOfflineRuns → child's
+is collecting for                 assets into Cache Storage            next child taps a different name  runs/trials
+```
+
+The researcher can be a `research_assistant`: the callables gate on permissions that role
+already holds (`assignments:read`; sync also `users:read`). A pack is one assignment plus
+the children in one cohort, classroom, or school — not the whole site. Progress already
+collected on another device (or online) shows as done. Every provision and sync is recorded in
+`offlineDevices/{deviceId}`.
+
+The launcher **never creates** a site, school, classroom, cohort, child, or assignment. If
+those already exist in the dashboard, skip the wizard: Select Site → Provision auto-builds
+the pack from `getAdministrations` + `listOfflineScopes` + `provisionOfflinePack`. The
+optional dashboard wizard (DEV-only `/science-fair`) is only for creating or finding those
+objects, or minting a pack link that preselects one pack.
+
+Field-collection tablets use an **open vault** (no device PIN). Tablets that already have a
+PIN vault still lock until that PIN is entered. Children never authenticate.
+
+### Preview (admin-dev, expires 2026-10-18)
+
+Anyone can open these URLs — no GitHub login and no cloned repos. Staff must sign in with a
+**LEVANTE researcher account on `hs-levante-admin-dev`** that already has access to the site.
+
+| Tool | URL |
+|---|---|
+| Launcher | https://hs-levante-admin-dev--offline-launcher-34g4znyg.web.app |
+| Wizard (optional) | https://hs-levante-admin-dev--science-fair-rcdjddph.web.app/science-fair |
+
+Hash routes stay as written: `#/`, `#/site`, `#/provision`, `#/sync`, `#/fair`. Do not rewrite
+them. Child mode also blocks `#/site`, `#/provision`, `#/sync`, and `#/fair`.
+
+## The loop (emulator / engineering)
 
 ```
 PROVISION (online)                ASSESS (offline, days)              SYNC (online)
-proctor signs in                  device unlocked with proctor PIN    proctor signs in
-picks an administration and       child picked from sealed roster     pending runs posted to
-a school or cohort                (with what is already done)         syncOfflineRuns → runs/trials
-provisionOfflinePack → roster,    TaskLauncher(core-tasks) with       under the child's uid →
-progress, variant params          OfflineAppkit → sealed IndexedDB    syncOnRunDocUpdate trigger;
-asset pack → Cache Storage        every trial appended in order       offlineDevices/{id} updated
+researcher signs in               child picked from the roster        researcher signs in
+picks a site, then one            (with what is already done)         pending runs posted to
+assignment × group pack           TaskLauncher(core-tasks) with       syncOfflineRuns → runs/trials
+provisionOfflinePack → roster,    OfflineAppkit → IndexedDB           under the child's uid →
+progress, variant params          every trial appended in order       syncOnRunDocUpdate trigger;
+asset pack → Cache Storage                                            offlineDevices/{id} updated
 ```
-
-The proctor can be a `research_assistant`: the callables gate on permissions the RA role
-already holds (`assignments:read`; sync also `users:read`). A device is provisioned for one
-school or one cohort of the administration; the roster is those children who hold an
-assignment for it, each with their per-task progress as of provisioning, so a child assessed
-on another device (or online) shows as done. Every provision and sync is recorded in
-`offlineDevices/{deviceId}` — the beginnings of a fleet view.
-
-The launcher **never creates** a site, school, cohort, child, or administration. It only
-reads what the dashboard (or a seed/script) already wrote, then writes runs. On a real
-project those objects come from `upsertOrg`, `createUsers`, and `upsertAdministration`.
 
 ## Layout
 
@@ -43,19 +72,21 @@ core-tasks/        git submodule → levante-framework/core-tasks @ spike/offlin
 functions-repo/    git submodule → levante-firebase-functions @ spike/sync-offline-runs
                    (emulator). The same three callables are on `hs-levante-admin-dev`
                    (ported onto functions `main` — do not deploy this spike snapshot wholesale).
-                     src/administrations/list-offline-scopes.ts       schools/cohorts a device can be scoped to
+                     src/administrations/list-offline-scopes.ts       school/class/cohort a device can be scoped to
                      src/administrations/provision-offline-pack.ts   roster (scoped) + progress + params
+                     src/administrations/offline-packs.ts            saveOfflinePack + listOfflinePacks (wizard)
                      src/runs/sync-offline-runs.ts                    ingest one run + trials, idempotent
                      src/utils/offline-permissions.ts                 permissions-core gate shared by all
                      src/utils/offline-devices.ts                     offlineDevices/{deviceId} registry
 shell/             the launcher: Vue 3 + Vite + vite-plugin-pwa (injectManifest)
   src/sw.ts        precaches the app shell; serves /pack/<id>/… from the levante-packs cache
-  src/offline/     auth (proctor session + callable client), packStore (runtime pack download,
-                   resumable), db (sealed IndexedDB envelopes), vault + crypto (PIN → PBKDF2 →
-                   AES-GCM), OfflineAppkit (firekit duck type), sync, exportRuns, wipe
-  src/views/       Provision, Roster, Task, Sync, Lock
-  test/            offline-run.mjs — Playwright proof (provision → offline → play → sync),
-                   --browser webkit for the WebKit engine
+  src/offline/     auth (Google + email/password + callable client), site (selected site),
+                   packStore (runtime pack download, resumable), db (IndexedDB), vault (open
+                   vault or PIN), OfflineAppkit, sync, exportRuns, wipe
+  src/views/       Site, Provision, Roster, Task, Sync, Fair (Step-by-Step), Lock
+  src/components/  StaffNav — numbered staff tabs
+  test/            Playwright: Select Site → pack → offline play → sync
+                   test/offline-run.mjs (emulator), test/science-fair-dev-run.mjs (admin-dev)
 emulator/          firebase.json + seed.mjs (permissions matrix, site, school, cohort, proctors,
                    children, administration, assignments) + inspect.mjs (what landed after a
                    sync) + serve-bundles.mjs (static bundle server with CORS + HTTP Range)
@@ -91,19 +122,18 @@ cd ../emulator && npm run bundles               # terminal C — http://127.0.0.
 cd ../shell && npm install --ignore-scripts && npx playwright install chromium webkit
 npm run build:emulator && npm run preview        # http://127.0.0.1:4173 (HTTP; HTTPS is PREVIEW_HTTPS=1)
 
-# 5. the proof (as the research assistant, device scoped to the school)
-node test/offline-run.mjs --tasks hearts-and-flowers,egma-math --pin 2468 --proctor ra@levante.test:ra123456 --scope Sunrise
-node test/offline-run.mjs --browser webkit --tasks hearts-and-flowers --pin 2468
+# 5. the proof (Select Site → assignment×group pack → offline play → sync)
+node test/offline-run.mjs --tasks hearts-and-flowers,egma-math --proctor ra@levante.test:ra123456 --site "Spike demo" --administration "Offline spike" --scope Sunrise
+node test/offline-run.mjs --browser webkit --tasks hearts-and-flowers
 cd ../emulator && npm run inspect                 # runs, trigger results, offlineDevices
 ```
 
-By hand, in Chrome or Safari: open the app → Provision → set a PIN, sign in as
-`proctor@levante.test` / `proctor123` (site admin) or `ra@levante.test` / `ra123456`
-(research assistant), load administrations, pick "Offline spike", pick "Sunrise Primary"
-(school: Ada, Blaise) or "Pilot cohort A" (cohort: Blaise, Carla), Provision → back to
+By hand, in Chrome or Safari: open `#/site` → sign in as `proctor@levante.test` /
+`proctor123` (site admin) or `ra@levante.test` / `ra123456` (research assistant) → pick
+**Spike demo site** → Continue to provision → tap the **Offline spike** pack for
+**Sunrise Primary** (Ada, Blaise) or **Pilot cohort A** (Blaise, Carla) → Download pack →
 Roster → turn Wi‑Fi off → play → Wi‑Fi on → Sync. The in-app Claude browser pane blocks
-service workers; use a real browser. Routes are hash paths (`#/`, `#/provision`, `#/sync`, `#/fair`)
-— do not rewrite them. `#/fair` is the staff science-fair / museum runbook.
+service workers; use a real browser.
 
 ## Against `hs-levante-admin-dev`
 
@@ -120,18 +150,27 @@ cd shell
 npm run build:dev && npm run preview        # http://127.0.0.1:4173
 ```
 
-The science-fair wizard on `-dev` uses the same password login as Cypress
-(`E2E_TEST_EMAIL` / `E2E_TEST_PASSWORD` from levante-support `.env`). Never Google SSO:
+The hosted Playwright run uses the same password login as Cypress
+(`E2E_TEST_EMAIL` / `E2E_TEST_PASSWORD` from levante-support `.env`). It follows the
+tablet path (Select Site → first matching pack → play → sync). Pass `--wizard` only if
+you need the dashboard wizard to create a new cohort/assignment.
 
 ```bash
 set -a && source /path/to/levante-support/.env && set +a
 cd shell && npm run test:science-fair:dev
+# smoke: node test/science-fair-dev-run.mjs --max-children 1 --tasks intro
+# optional wizard: node test/science-fair-dev-run.mjs --wizard
 ```
 
 Sign in with a **dashboard-dev** site admin or research assistant — not
-`ra@levante.test`. Pick a real administration and a school or cohort. `VITE_BUNDLE_BASE`
-is empty in this mode, so provision lists GCS (~1,800 requests) instead of the local
-bundle server.
+`ra@levante.test`. `VITE_BUNDLE_BASE` is empty in this mode, so provision lists GCS
+instead of the local bundle server.
+
+Redeploy the 30-day preview (does **not** publish live `hs-levante-admin-dev.web.app`):
+
+```bash
+cd shell && npm run deploy:dev:preview
+```
 
 levante-support can mint disposable site-admin / RA accounts (`reset-site`,
 `create-permissions-users`). Its `setup-qa-site` fixture is a walk-up participant on
@@ -147,7 +186,12 @@ To redeploy **only** these functions from `levante-firebase-functions/functions/
 (never omit `--project dev` or the `levante-admin:` codebase prefix):
 
 ```bash
-firebase --project dev deploy --only functions:levante-admin:provisionOfflinePack,functions:levante-admin:syncOfflineRuns,functions:levante-admin:listOfflineScopes
+firebase --project dev deploy --only \
+  functions:levante-admin:provisionOfflinePack,\
+  functions:levante-admin:syncOfflineRuns,\
+  functions:levante-admin:listOfflineScopes,\
+  functions:levante-admin:saveOfflinePack,\
+  functions:levante-admin:listOfflinePacks
 ```
 
 ## Design notes
@@ -155,15 +199,19 @@ firebase --project dev deploy --only functions:levante-admin:provisionOfflinePac
 - **Identity never moves.** Children come only from existing user documents
   (`provisionOfflinePack`), attributed by uid. Birth fields are integers (`birthMonth` 1–12,
   `birthYear` four digits); the callable coerces numeric strings the way levante-zod does
-  for `month`/`year`. The launcher refuses to run a child if either is missing. The proctor
-  authenticates only for provisioning and sync (Identity Toolkit REST + `POST { data }`
-  callables; no Firebase client SDK). The callables gate on permissions-core
-  (`assignments:read` to list scopes and provision; `assignments:read` + `users:read` to
-  sync — the research-assistant baseline) with a legacy `adminOrgs` fallback.
-- **A device serves one school or cohort.** `listOfflineScopes` offers the administration's
-  schools and cohorts; the pack id includes the scope; the roster is the scope's children who
-  hold the assignment, each with `progress` per task as of provisioning. The roster merges
-  that with completed runs stored on the device, so "done" is visible without a network.
+  for `month`/`year`. The launcher refuses to run a child if either is missing. The
+  researcher authenticates only for Select Site, provisioning, and sync: Google via the
+  Firebase Auth client (popup, then redirect if the tablet blocks popups) or email/password
+  via Identity Toolkit REST, then `setUidClaims` and `POST { data }` callables. The
+  callables gate on permissions-core (`assignments:read` to list scopes and provision;
+  `assignments:read` + `users:read` to sync — the research-assistant baseline) with a
+  legacy `adminOrgs` fallback.
+- **A device serves one group on one site.** Step 1 stores the site (names come from the
+  researcher's `siteNames` claims). Step 2 lists every assignment × cohort/classroom/school
+  pack on that site. The pack id includes the scope; the roster is that group's children
+  who hold the assignment, each with `progress` per task as of provisioning. The roster
+  merges that with completed runs stored on the device, so "done" is visible without a
+  network.
 - **The pack is a cache of an administration.** `provisionOfflinePack` returns the tasks
   with the params *pinned on the administration* (the same snapshot `startTask` reads online)
   plus the roster; the device downloads stimuli, corpora and translations from the public
@@ -188,18 +236,17 @@ firebase --project dev deploy --only functions:levante-admin:provisionOfflinePac
   warnings in the index (`--strict` fails the build). Without `VITE_BUNDLE_BASE` the
   launcher falls back to listing the bucket folders and fetching ~1,800 objects, which is
   what made WebKit take minutes.
-- **Child mode.** "Start child mode" on the roster hides the proctor controls (sync,
-  provisioning, lock, PIDs/birth dates) and makes `#/sync`, `#/provision`, and `#/fair` route back to the
-  roster; leaving it requires the device PIN, verified against the vault rather than the
-  session key. The flag survives the reload core-tasks needs between tasks and a relaunch.
-  It is a UI guard, not a security boundary: on a real deployment pair it with the OS kiosk
-  (Guided Access / Android screen pinning or an MDM kiosk profile).
-- **Sealed at rest.** A proctor PIN (PBKDF2, 310k iterations) derives an AES-GCM key.
-  Runs, trials and the roster are stored as small plaintext envelopes (ids, indexes, counts)
-  plus one sealed box; the key lives in `sessionStorage` after unlock so the reload
-  core-tasks needs between tasks does not re-prompt, and "Lock device" / closing the app drops
-  it. Forgotten PIN = wipe. This is defence in depth on top of device encryption + MDM, not a
-  replacement.
+- **Child mode.** "Start child mode" on the roster hides staff controls (Select Site,
+  Provision, Sync, lock, PIDs/birth dates) and makes `#/site`, `#/provision`, `#/sync`, and
+  `#/fair` route back to the roster. On a PIN vault, leaving child mode requires that PIN.
+  On an open field-collection vault, the on-site researcher exit control is enough. The
+  flag survives the reload core-tasks needs between tasks and a relaunch. It is a UI guard,
+  not a security boundary: on a real deployment pair it with the OS kiosk (Guided Access /
+  Android screen pinning or an MDM kiosk profile).
+- **Vault.** New field-collection tablets use an open vault (no PIN). Devices that already
+  have a PIN vault still seal runs with AES-GCM (PBKDF2, 310k iterations); the key lives in
+  `sessionStorage` after unlock so the reload between tasks does not re-prompt. Forgotten
+  PIN = wipe. That is defence in depth on top of device encryption + MDM, not a replacement.
 - **Outbox.** Trials are appended in order through a serial write chain (core-tasks fires
   `writeTrial` without awaiting); a crash mid-run keeps every trial written before it.
 - **Ingest (`syncOfflineRuns`).** Validates shape, checks authority, writes trials first and
@@ -213,7 +260,7 @@ firebase --project dev deploy --only functions:levante-admin:provisionOfflinePac
 
 | Item | State |
 |---|---|
-| Provisioning from a real administration | done (callable + UI + resumable download); scoped to a school/cohort, with per-child progress and an `offlineDevices` registry. Callables are on `hs-levante-admin-dev`; `npm run build:dev` points the shell at them |
+| Provisioning from a real administration | done (Select Site + assignment×group pack + resumable download); scoped to a school/classroom/cohort, with per-child progress and an `offlineDevices` registry. Callables are on `hs-levante-admin-dev`; preview channel + `npm run build:dev` |
 | Research-assistant proctor | done: the full loop verified as `research_assistant` (no new role) |
 | Bundled packs | done: `build-bundles.mjs` + streaming/resumable download; WebKit provisioning 47 s → 1 s |
 | Child (kiosk) mode | done: proctor controls and routes gated behind the PIN; exercised by the e2e |
@@ -266,10 +313,10 @@ should be a person with real devices, in this order:
 
 1. **Reproduce the proof on a second machine** (README quick start, both engines). If the
    setup instructions fail, that is the first bug.
-2. **Point a build at `hs-levante-admin-dev`** (`npm run build:dev && npm run preview`).
-   Sign in with a dashboard-dev site admin or research assistant and provision a real
-   administration (school- or cohort-scoped children with integer birth dates). The
-   emulator seed is not real data. See *Against hs-levante-admin-dev* above.
+2. **Point a build at `hs-levante-admin-dev`** (`npm run build:dev && npm run preview`,
+   or the hosted preview URL). Sign in with a dashboard-dev site admin or research
+   assistant, Select Site, then download a real assignment × group pack. The emulator
+   seed is not real data. See *Field collection on a tablet* above.
 3. **Real devices, one of each:** an iPad (TestFlight or a dev-signed build) and the cheapest
    Android tablet the field will actually buy (sideloaded APK). Provision a real dev-project
    administration scoped to one school; check the roster and per-child progress against the

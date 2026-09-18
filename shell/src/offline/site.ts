@@ -1,4 +1,4 @@
-import { callFunction } from './auth';
+import { callFunction, getSession } from './auth';
 import { logError } from './sentry';
 
 const SELECTED_SITE_KEY = 'levante-offline:selected-site';
@@ -95,7 +95,7 @@ export async function loadSiteCatalog(): Promise<SiteCatalog> {
     tasks: Array.isArray(a.assessments) ? a.assessments.map((x: { taskId?: string }) => String(x.taskId)) : [],
     districts: Array.isArray(a.districts) ? a.districts.map((id: unknown) => String(id)) : [],
   }));
-  const names: Record<string, string> = {};
+  const names: Record<string, string> = { ...siteNamesFromToken() };
   for (const pack of savedRes.packs ?? []) {
     if (pack.siteId && pack.siteName) names[pack.siteId] = pack.siteName;
   }
@@ -107,6 +107,24 @@ export async function loadSiteCatalog(): Promise<SiteCatalog> {
     .map((id) => ({ id, name: names[id] || id }))
     .sort((a, b) => a.name.localeCompare(b.name));
   return { administrations, sites };
+}
+
+function siteNamesFromToken(): Record<string, string> {
+  const token = getSession()?.idToken;
+  if (!token) return {};
+  try {
+    const part = token.split('.')[1] ?? '';
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = b64.padEnd(b64.length + ((4 - (b64.length % 4)) % 4), '=');
+    const payload = JSON.parse(atob(pad)) as { siteNames?: Record<string, unknown> };
+    const names: Record<string, string> = {};
+    for (const [id, name] of Object.entries(payload.siteNames ?? {})) {
+      if (typeof name === 'string' && name.trim()) names[id] = name;
+    }
+    return names;
+  } catch {
+    return {};
+  }
 }
 
 function toDateString(value: unknown): string | null {

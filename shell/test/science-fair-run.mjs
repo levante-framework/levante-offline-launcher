@@ -8,6 +8,7 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { provisionFromSite } from './lib/provision.mjs';
 
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, a, i, arr) => {
@@ -21,6 +22,7 @@ const TASKS = String(args.tasks || 'hearts-and-flowers,intro').split(',');
 const PIDS = String(args.children || 'TEST-01,TEST-02,TEST-03,TEST-04,TEST-05,TEST-06,TEST-07,TEST-08,TEST-09,TEST-10').split(',');
 const ADMINISTRATION = args.administration || 'Science fair';
 const SCOPE = args.scope || 'Science Fair';
+const SITE = args.site || 'Science Fair';
 const MAX_SECONDS = Number(args['max-seconds'] || 180);
 const [PROCTOR_EMAIL, PROCTOR_PASSWORD] = String(args.proctor || 'fair@levante.test:fair123456').split(':');
 const PIN = args.pin || '2468';
@@ -63,33 +65,17 @@ const idbAll = () =>
   });
 
 console.log(`engine: chromium ${browser.version()}`);
-console.log(`1. provisioning ${PIDS.length} children × ${TASKS.join(', ')} at ${APP_URL} as ${PROCTOR_EMAIL}…`);
-await page.goto(`${APP_URL}/#/provision`, { waitUntil: 'load' });
-if (await page.evaluate(() => 'serviceWorker' in navigator)) {
-  await page.waitForFunction(() => navigator.serviceWorker?.getRegistration().then((r) => !!r?.active), null, { timeout: 60_000 });
-}
-if (await page.$('input[name=pin]')) {
-  await page.fill('input[name=pin]', PIN);
-  await page.fill('input[name=pinConfirm]', PIN);
-  await page.click('button:has-text("Set PIN")');
-  await page.waitForSelector('text=Device PIN set', { timeout: 30_000 });
-  console.log('   device vault created');
-}
-await page.fill('input[type=email]', PROCTOR_EMAIL);
-await page.fill('input[type=password]', PROCTOR_PASSWORD);
-await page.click('button[type=submit]');
-await page.waitForSelector('text=Signed in as', { timeout: 30_000 });
-await page.click('button:has-text("administrations")');
-await page.waitForSelector(`button.child:has-text("${ADMINISTRATION}")`, { timeout: 60_000 });
-await page.click(`button.child:has-text("${ADMINISTRATION}")`);
-if (SCOPE !== 'site') {
-  await page.waitForSelector(`button.scope:has-text("${SCOPE}")`, { timeout: 60_000 });
-  await page.click(`button.scope:has-text("${SCOPE}")`);
-}
-const t0p = Date.now();
-await page.click('button:has-text("Provision this device")');
-await page.waitForSelector('.notice:has-text("Provisioned")', { timeout: 15 * 60_000 });
-console.log(`   ${await page.evaluate(() => document.querySelector('.notice')?.textContent?.trim())} (${((Date.now() - t0p) / 1000).toFixed(0)}s)`);
+console.log(`1. select site + provision ${PIDS.length} children × ${TASKS.join(', ')} at ${APP_URL} as ${PROCTOR_EMAIL}…`);
+const provisioned = await provisionFromSite(page, {
+  appUrl: APP_URL,
+  email: PROCTOR_EMAIL,
+  password: PROCTOR_PASSWORD,
+  site: SITE,
+  assignment: ADMINISTRATION,
+  scope: SCOPE === 'site' ? '' : SCOPE,
+  pin: PIN,
+});
+console.log(`   ${provisioned.message} (${provisioned.seconds.toFixed(0)}s)`);
 
 console.log('2. going offline and reloading…');
 await context.setOffline(true);
