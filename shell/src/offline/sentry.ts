@@ -7,6 +7,13 @@ export const sentryEnabled = Boolean(dsn);
 
 type Scalar = string | number | boolean;
 
+declare global {
+  interface Window {
+    Cypress?: unknown;
+    __levanteCaptureTestError?: (message: string, attrs?: Record<string, Scalar>) => void;
+  }
+}
+
 function taskAttrs(properties?: Record<string, unknown>): Record<string, Scalar> {
   const game = properties?.gameParams as Record<string, unknown> | undefined;
   const ctx = properties?.context as Record<string, unknown> | undefined;
@@ -47,6 +54,11 @@ export function initSentry(app: App) {
   });
   Sentry.setTag('appBuild', __APP_BUILD__);
   Sentry.logger.info('launcher boot', { mode: import.meta.env.MODE, appBuild: __APP_BUILD__ });
+  if (import.meta.env.MODE === 'dev' || Boolean(window.Cypress)) {
+    window.__levanteCaptureTestError = (message, attrs = {}) => {
+      logError(message, new Error(message), attrs);
+    };
+  }
 }
 
 export function setProctor(uid: string) {

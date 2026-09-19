@@ -104,7 +104,10 @@ export async function provisionFromSite(page, opts) {
   await page.waitForSelector('text=Packs for this site', { timeout: 60_000 });
   const download = page.getByRole('button', { name: /Download pack/i });
   const alreadySelected = await download.isEnabled().catch(() => false);
-  const packLabel = alreadySelected && !assignment && !scope ? '(preselected)' : await pickPack(page, assignment, scope);
+  const packLabel =
+    alreadySelected && (packLink || (!assignment && !scope))
+      ? '(preselected)'
+      : await pickPack(page, assignment, scope);
   console.log(`   pack: ${packLabel}`);
 
   const deadline = Date.now() + 6 * 60_000;
