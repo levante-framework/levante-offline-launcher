@@ -127,7 +127,7 @@ async function dashboardPasswordLogin(page) {
   if (!page.url().includes('/science-fair')) {
     await page.goto(`${DASHBOARD}/science-fair`, { waitUntil: 'domcontentloaded' });
   }
-  await page.getByRole('heading', { name: /Science fair/i }).waitFor({ timeout: 60_000 });
+  await page.getByRole('heading', { name: /Field collection|Science fair/i }).waitFor({ timeout: 60_000 });
   await dismissWelcomeTour(page);
 }
 
@@ -152,7 +152,9 @@ async function pickSite(page) {
 }
 
 async function createCohortAndChildren(page) {
-  await page.getByPlaceholder('Bay Area Science Fair').first().fill(GROUP_NAME);
+  const createMode = page.locator('input[type=radio][value=create]');
+  if (await createMode.count()) await createMode.check({ force: true });
+  await page.getByPlaceholder(/Field collection cohort|Bay Area Science Fair/i).first().fill(GROUP_NAME);
   await page.locator('input[type="number"]').nth(0).fill(String(CHILD_COUNT));
   await page.locator('input[type="number"]').nth(1).fill(String(MIN_AGE));
   await page.locator('input[type="number"]').nth(2).fill(String(MAX_AGE));
@@ -162,6 +164,20 @@ async function createCohortAndChildren(page) {
     els.map((el) => el.textContent?.trim() || '').filter((t, i) => i % 2 === 0 && t),
   );
   return ids;
+}
+
+async function pickAssignmentGroup(page, tabLabel, name) {
+  await page.locator('.group-picker-component [role="tab"]').filter({ hasText: new RegExp(`^${tabLabel}$`, 'i') }).click();
+  const search = page.getByPlaceholder(new RegExp(`Search for ${tabLabel}`, 'i'));
+  await search.waitFor({ timeout: 15_000 });
+  await search.fill('');
+  await search.fill(name);
+  const opt = page.locator('.group-picker-component .p-listbox-option:visible').filter({ hasText: name }).first();
+  await opt.waitFor({ state: 'visible', timeout: 30_000 });
+  await opt.click();
+  const continueBtn = page.getByRole('button', { name: /^Continue$/ });
+  if (await continueBtn.isVisible().catch(() => false)) await continueBtn.click();
+  await page.locator('.selected-groups-scroll-panel').getByText(name).waitFor({ timeout: 20_000 });
 }
 
 async function pickToday(page, selector) {
@@ -206,6 +222,9 @@ async function selectTaskVariant(page, taskId) {
   const queries = {
     'hearts-and-flowers': ['hearts-and-flowers', 'Hearts'],
     intro: ['intro', 'Instructions'],
+    'egma-math': ['egma-math', 'EGMA', 'Math'],
+    'matrix-reasoning': ['matrix-reasoning', 'Matrix'],
+    'memory-game': ['memory-game', 'Memory'],
   };
   const tries = queries[taskId] || [taskId];
   for (const query of tries) {
@@ -239,17 +258,7 @@ async function createAssignment(page) {
   await ensureDateFilled(page, '[data-cy="input-start-date"]');
   await ensureDateFilled(page, '[data-cy="input-end-date"]');
 
-  await page.locator('.group-picker-component [role="tab"]').filter({ hasText: /^Sites$/ }).click();
-  const siteSearch = page.getByPlaceholder(/Search for Sites/i);
-  if (await siteSearch.count()) await siteSearch.fill(SITE_NAME);
-  await page
-    .locator('.group-picker-component [role="option"]')
-    .filter({ hasText: new RegExp(`^${SITE_NAME}$`, 'i') })
-    .first()
-    .click({ force: true });
-  const continueBtn = page.getByRole('button', { name: /^Continue$/ });
-  if (await continueBtn.isVisible().catch(() => false)) await continueBtn.click();
-  await page.locator('.selected-groups-scroll-panel').getByText(SITE_NAME).waitFor({ timeout: 20_000 });
+  await pickAssignmentGroup(page, 'Sites', SITE_NAME);
 
   const language = page.locator('.languages-dropdown');
   await language.waitFor({ state: 'visible', timeout: 30_000 });
@@ -518,12 +527,13 @@ try {
   let childIds = [];
   if (SKIP_USERS) {
     console.log(`3. reuse cohort "${GROUP_NAME}"…`);
-    await page.getByPlaceholder('Bay Area Science Fair').first().fill(GROUP_NAME);
-    await page.evaluate((groupName) => {
-      const raw = JSON.parse(localStorage.getItem('levante-science-fair-wizard-event-v1') || '{}');
-      raw.groupName = groupName;
-      localStorage.setItem('levante-science-fair-wizard-event-v1', JSON.stringify(raw));
-    }, GROUP_NAME);
+    await page.locator('input[type=radio][value=existing]').check({ force: true });
+    await page.locator('input[type=radio][value=cohort]').check({ force: true });
+    const cohortSelect = page.locator('.site-select').nth(1);
+    await cohortSelect.click();
+    await page.getByRole('option', { name: new RegExp(GROUP_NAME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') }).first().click();
+    await page.getByRole('button', { name: 'Use this cohort' }).click();
+    childIds = Array.from({ length: CHILD_COUNT }, (_, i) => `reuse-${i}`);
   } else {
     console.log(`3. create cohort "${GROUP_NAME}" with ${CHILD_COUNT} children…`);
     childIds = await createCohortAndChildren(page);
@@ -544,7 +554,7 @@ try {
   console.log(`   pack link: ${packLink}`);
   if (WIZARD_ONLY) {
     console.log('\nscience_fair -dev wizard: PASSED');
-    ok = childIds.length >= CHILD_COUNT && Boolean(packLink);
+    ok = Boolean(packLink) && (SKIP_USERS || childIds.length >= CHILD_COUNT);
     process.exitCode = ok ? 0 : 1;
     await browser.close();
     process.exit(process.exitCode);
