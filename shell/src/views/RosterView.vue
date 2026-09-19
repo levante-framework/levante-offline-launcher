@@ -1,6 +1,6 @@
 <template>
   <div class="page">
-    <h1>3 · Roster</h1>
+    <h1>3 · Collect Data</h1>
     <p class="muted" v-if="pack && !childMode">
       <strong>{{ pack.name }}</strong> · {{ scopeLabel }} · {{ pack.locale }} · {{ pack.children.length }} children ·
       {{ pack.fileCount }} files / {{ mb(pack.totalBytes) }} MB · provisioned

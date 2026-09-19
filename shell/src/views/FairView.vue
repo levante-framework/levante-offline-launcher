@@ -47,7 +47,7 @@
 
     <div class="card">
       <div class="row" style="justify-content: space-between">
-        <h2 style="margin: 0">3 · Roster</h2>
+        <h2 style="margin: 0">3 · Collect Data</h2>
         <span class="pill" :class="progress.assessed ? 'ok' : 'warn'">{{
           progress.assessed ? `${progress.runCount} run(s) on device` : 'No runs yet'
         }}</span>
@@ -63,7 +63,7 @@
         <li>Use the task counts to see who still has work left.</li>
         <li>Stay in child mode while collecting. Leave it only when you are done for the session: tap <strong>On-site Researcher</strong>, then <strong>Exit child mode</strong> (that also writes a Backup file to Downloads).</li>
       </ol>
-      <a href="#/"><button type="button" class="primary">Open roster</button></a>
+      <a href="#/"><button type="button" class="primary">Collect Data</button></a>
     </div>
 
     <div class="card">
