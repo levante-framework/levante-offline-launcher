@@ -7,8 +7,10 @@
     </p>
     <StaffNav current="sync" />
     <div class="row">
-      <button type="button" class="secondary" @click="exportAll" :disabled="!runs.length">Backup to Download Folder</button>
-      <button type="button" @click="clearSynced" :disabled="!synced.length">Delete {{ synced.length }} synced</button>
+      <button type="button" class="backup" @click="exportAll" :disabled="!runs.length">Backup to Download Folder</button>
+      <button type="button" @click="clearSynced" :disabled="!synced.length">
+        Delete {{ synced.length }} synced run{{ synced.length === 1 ? '' : 's' }}
+      </button>
     </div>
 
     <div class="card">

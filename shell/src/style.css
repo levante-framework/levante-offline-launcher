@@ -78,6 +78,11 @@ button {
   cursor: pointer;
 }
 
+.row > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 button:hover:not(:disabled) {
   filter: brightness(0.97);
 }
@@ -88,7 +93,7 @@ button.primary {
   color: #fff;
 }
 
-button.secondary {
+button.backup {
   background: var(--ok);
   border-color: var(--ok);
   color: #fff;
