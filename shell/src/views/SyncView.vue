@@ -7,13 +7,13 @@
     </p>
     <StaffNav current="sync" />
     <div class="row">
-      <button type="button" @click="exportAll" :disabled="!runs.length">Backup</button>
+      <button type="button" class="secondary" @click="exportAll" :disabled="!runs.length">Backup to Download Folder</button>
       <button type="button" @click="clearSynced" :disabled="!synced.length">Delete {{ synced.length }} synced</button>
     </div>
 
     <div class="card">
       <h2 style="margin-top: 0">Sync to server</h2>
-      <p class="muted" v-if="!backendConfigured">This build has no backend configured; use Backup.</p>
+      <p class="muted" v-if="!backendConfigured">This build has no backend configured; use Backup to Download Folder.</p>
       <div v-else-if="syncing" class="spinner-overlay" role="status" aria-live="polite">
         <div class="spinner" aria-hidden="true" />
         <p class="muted">{{ session ? 'Syncing…' : 'Signing in…' }}</p>

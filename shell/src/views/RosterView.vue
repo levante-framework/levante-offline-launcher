@@ -212,8 +212,8 @@ async function exitChildMode() {
       backupNotice.value = n ? `Backed up ${n} run(s) to Downloads.` : '';
     } catch (backupErr) {
       backupNotice.value = backupErr instanceof Error
-        ? `Backup failed: ${backupErr.message}. Use Backup on the Sync screen.`
-        : 'Backup failed. Use Backup on the Sync screen.';
+        ? `Backup failed: ${backupErr.message}. Use Backup to Download Folder on the Sync screen.`
+        : 'Backup failed. Use Backup to Download Folder on the Sync screen.';
     }
   } catch (err) {
     exitError.value = err instanceof Error ? err.message : String(err);
@@ -236,6 +236,7 @@ function mb(bytes: number) {
 button.done {
   background: #2e7d32;
   border-color: #2e7d32;
+  color: #fff;
 }
 .proctor-exit {
   margin-top: 48px;

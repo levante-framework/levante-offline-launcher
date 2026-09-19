@@ -81,8 +81,8 @@
         Online. After you leave child mode, sign in with the same On-site Researcher Google
         account (or email / password) and tap <strong>Sync</strong> to upload pending runs
         to the server. The same run ids overwrite, so a Backup plus a later Sync does not
-        create duplicates. <strong>Backup</strong> only saves a JSON file to Downloads — it
-        does not upload. You can tap Backup again anytime. This page marks retrieval done
+        create duplicates. <strong>Backup to Download Folder</strong> only saves a JSON file
+        — it does not upload. You can tap it again anytime. This page marks retrieval done
         when every local run is synced.
       </p>
       <a href="#/sync"><button type="button" class="primary">Open sync</button></a>
