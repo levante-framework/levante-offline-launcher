@@ -61,7 +61,7 @@ export default defineConfig({
     ...(process.env.SENTRY_AUTH_TOKEN
       ? [
           sentryVitePlugin({
-            org: 'levante-framework',
+            org: 'levante-framework-eu',
             project: 'offline-launcher',
             authToken: process.env.SENTRY_AUTH_TOKEN,
             release: { name: appBuild },

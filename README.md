@@ -139,10 +139,13 @@ service workers; use a real browser.
 
 The three callables are live on that project (`us-central1`, codebase `levante-admin`).
 `shell/.env.dev` points Auth, Functions, and assets at `-dev`
-(`levante-assets-dev`, same bucket the dashboard uses). Sentry (`offline-launcher` in the levante-framework org)
-gets errors plus lifecycle logs (boot, sign-in, provision, task, sync). No session
-replay — this shell sits in front of children. Rebuild after changing `VITE_SENTRY_DSN`.
-Set `SENTRY_AUTH_TOKEN` when building so hidden source maps upload to that project
+(`levante-assets-dev`, same bucket the dashboard uses). Sentry (`offline-launcher` in
+`levante-framework-eu`, Frankfurt) gets errors plus lifecycle logs (boot, sign-in,
+provision, task, sync). Handled core-tasks errors go through the same client via the
+injected logger. While the tablet is offline, envelopes queue in IndexedDB (up to 200)
+and flush on the next launch once the device is online. No session replay — this shell
+sits in front of children. Rebuild after changing `VITE_SENTRY_DSN`.
+Set `SENTRY_AUTH_TOKEN` when building so hidden source maps upload to that EU project
 and are stripped from `dist` (readable stacks; maps never ship to the tablet).
 
 ```bash
