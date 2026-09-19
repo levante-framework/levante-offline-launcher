@@ -5,6 +5,7 @@
 //   cd shell && node test/science-fair-dev-run.mjs
 //
 // Flags: --wizard  --wizard-only  --headed  --max-children 1  --tasks hearts-and-flowers,intro
+// Each child queues two Sentry probe exceptions while offline (flush after Sync comes back online).
 
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
@@ -273,12 +274,25 @@ async function createAssignment(page) {
     .first()
     .waitFor({ timeout: 60_000 });
   for (const task of TASKS) await selectTaskVariant(page, task);
-  await page.locator('input[id="No"]').check({ force: true });
+  await page.evaluate(() => {
+    const label = [...document.querySelectorAll('label, span, div')].find(
+      (el) => el.childNodes.length && el.textContent?.trim() === 'No' && el.textContent.length < 8,
+    );
+    const input = document.querySelector('input#No');
+    (label || input)?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    if (input) {
+      input.checked = true;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  });
 
+  const createBtn = page.locator('[data-cy="button-create-administration"]');
+  await createBtn.waitFor({ state: 'visible', timeout: 15_000 });
   const upsert = page.waitForResponse((res) => /upsertAdministration/i.test(res.url()) && res.request().method() === 'POST', {
     timeout: 120_000,
   });
-  await page.locator('[data-cy="button-create-administration"]').click();
+  await createBtn.click({ force: true });
   const response = await upsert;
   if (response.status() >= 400) {
     throw new Error(`upsertAdministration HTTP ${response.status()}`);
@@ -298,6 +312,16 @@ const idbAll = (page) =>
     return { runs: await store.listRuns(), trials: await store.allTrials(), packs: await store.listPacks() };
   });
 
+async function captureSentryProbes(page, pid) {
+  return page.evaluate((childId) => {
+    const fn = window.__levanteCaptureTestError;
+    if (typeof fn !== 'function') return { ok: false, reason: 'no hook' };
+    fn(`science-fair sentry probe 1 ${childId}`, { taskName: 'science-fair-probe', probe: 1, childPid: childId });
+    fn(`science-fair sentry probe 2 ${childId}`, { taskName: 'science-fair-probe', probe: 2, childPid: childId });
+    return { ok: true };
+  }, pid);
+}
+
 async function playOffline(page, origin, pids) {
   await page.context().setOffline(true);
   await page.goto(`${origin}/#/`, { waitUntil: 'load' });
@@ -309,6 +333,8 @@ async function playOffline(page, origin, pids) {
 
   const mountFailures = [];
   for (const pid of pids) {
+    const probes = await captureSentryProbes(page, pid);
+    console.log(`   ${pid} · sentry probes: ${probes.ok ? 'queued' : probes.reason}`);
     for (const task of TASKS) {
       console.log(`   ${pid} · ${task}`);
       await page.click(`button.child:has-text("${pid}")`);
