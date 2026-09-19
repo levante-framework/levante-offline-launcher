@@ -7,13 +7,13 @@
     </p>
     <StaffNav current="sync" />
     <div class="row">
-      <button type="button" @click="exportAll" :disabled="!runs.length">Download JSON export</button>
+      <button type="button" @click="exportAll" :disabled="!runs.length">Backup</button>
       <button type="button" @click="clearSynced" :disabled="!synced.length">Delete {{ synced.length }} synced</button>
     </div>
 
     <div class="card">
       <h2 style="margin-top: 0">Sync to server</h2>
-      <p class="muted" v-if="!backendConfigured">This build has no backend configured; use the JSON export.</p>
+      <p class="muted" v-if="!backendConfigured">This build has no backend configured; use Backup.</p>
       <div v-else-if="syncing" class="spinner-overlay" role="status" aria-live="polite">
         <div class="spinner" aria-hidden="true" />
         <p class="muted">{{ session ? 'Syncing…' : 'Signing in…' }}</p>
@@ -110,7 +110,7 @@ import {
 } from '../offline/auth';
 import { deleteRun, listRuns } from '../offline/db';
 import { getDeviceId } from '../offline/device';
-import { buildExportBundle, downloadJson } from '../offline/exportRuns';
+import { backupRuns } from '../offline/exportRuns';
 import { syncPendingRuns } from '../offline/sync';
 import type { OfflineRunRecord } from '../offline/types';
 
@@ -138,9 +138,8 @@ onMounted(() => {
 });
 
 async function exportAll() {
-  const bundle = await buildExportBundle();
-  downloadJson(`levante-offline-export-${new Date().toISOString().slice(0, 19).replace(/:/g, '')}.json`, bundle);
-  message.value = `Exported ${bundle.runs.length} run(s).`;
+  const n = await backupRuns();
+  message.value = n ? `Backed up ${n} run(s) to Downloads.` : 'No runs to back up.';
 }
 
 async function signInAndSync() {

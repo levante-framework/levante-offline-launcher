@@ -61,7 +61,7 @@
         <li>Each child taps <strong>their own name</strong>, then a task.</li>
         <li>When the task finishes, the roster returns. The next child taps a <strong>different</strong> name.</li>
         <li>Use the task counts to see who still has work left.</li>
-        <li>Stay in child mode while collecting. Leave it only to sync: tap <strong>On-site Researcher</strong>, then Exit child mode.</li>
+        <li>Stay in child mode while collecting. Leave it only when you are done for the session: tap <strong>On-site Researcher</strong>, then <strong>Exit child mode</strong> (that also writes a Backup file to Downloads).</li>
       </ol>
       <a href="#/"><button type="button" class="primary">Open roster</button></a>
     </div>
@@ -78,10 +78,12 @@
         }}</span>
       </div>
       <p class="muted">
-        Online. Leave child mode, then sign in with the same On-site Researcher Google account
-        (or email / password) and sync pending runs. This page marks
-        retrieval done when every local run is synced. You can also download a JSON export from the
-        sync screen.
+        Online. After you leave child mode, sign in with the same On-site Researcher Google
+        account (or email / password) and tap <strong>Sync</strong> to upload pending runs
+        to the server. The same run ids overwrite, so a Backup plus a later Sync does not
+        create duplicates. <strong>Backup</strong> only saves a JSON file to Downloads — it
+        does not upload. You can tap Backup again anytime. This page marks retrieval done
+        when every local run is synced.
       </p>
       <a href="#/sync"><button type="button" class="primary">Open sync</button></a>
     </div>

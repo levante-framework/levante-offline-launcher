@@ -17,3 +17,11 @@ export function downloadJson(filename: string, data: unknown) {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+/** Write the local journal to Downloads. Returns the run count; 0 means no file. */
+export async function backupRuns(): Promise<number> {
+  const bundle = await buildExportBundle();
+  if (!bundle.runs.length) return 0;
+  downloadJson(`levante-offline-export-${new Date().toISOString().slice(0, 19).replace(/:/g, '')}.json`, bundle);
+  return bundle.runs.length;
+}

@@ -22,6 +22,7 @@
       <div style="margin-top: 8px"><a href="#/provision"><button type="button" class="primary">Provision this device</button></a></div>
     </div>
 
+    <p v-if="backupNotice && !childMode" class="notice">{{ backupNotice }}</p>
     <p v-if="pack && !childMode" class="notice">
       Tap <strong>Start child mode</strong>, then each child taps their own name, plays a task, and
       comes back here. The next child taps a different name. Do not provision or sign in again
@@ -102,6 +103,7 @@ import { isChildMode, setChildMode } from '../offline/mode';
 import { loadPack } from '../offline/pack';
 import { platformLabel } from '../offline/storage';
 import type { PackRecord, RosterEntry } from '../offline/types';
+import { backupRuns } from '../offline/exportRuns';
 import { lock, pinProtected, unlock, vaultExists } from '../offline/vault';
 
 const pack = ref<PackRecord | null>(null);
@@ -118,6 +120,7 @@ const exitPrompt = ref(false);
 const exitPin = ref('');
 const exitError = ref('');
 const busy = ref(false);
+const backupNotice = ref('');
 
 const onOnline = () => (online.value = true);
 const onOffline = () => (online.value = false);
@@ -204,6 +207,14 @@ async function exitChildMode() {
     setChildMode(false);
     childMode.value = false;
     exitPrompt.value = false;
+    try {
+      const n = await backupRuns();
+      backupNotice.value = n ? `Backed up ${n} run(s) to Downloads.` : '';
+    } catch (backupErr) {
+      backupNotice.value = backupErr instanceof Error
+        ? `Backup failed: ${backupErr.message}. Use Backup on the Sync screen.`
+        : 'Backup failed. Use Backup on the Sync screen.';
+    }
   } catch (err) {
     exitError.value = err instanceof Error ? err.message : String(err);
   } finally {

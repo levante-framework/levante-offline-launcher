@@ -74,7 +74,7 @@ new role. The run is written with the Admin SDK; the caller never gets write acc
 
 ## 3) Cardinality and key safety
 
-- Run and trial ids are client-generated; collisions are cryptographically negligible (UUID v4; trial ids scoped to the run). Re-syncing the same device twice produces no duplicates.
+- Run and trial ids are client-generated; collisions are cryptographically negligible (UUID v4; trial ids scoped to the run). Re-syncing the same device twice produces no duplicates. A tablet Backup file in Downloads is a courier copy only; ingest still reads IndexedDB, not that file.
 - One run per (child, task, attempt) exactly as online; a child can accumulate multiple runs per task, and the trigger picks the best run by the same rules.
 
 ## 4) Rollout and compatibility

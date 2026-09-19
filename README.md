@@ -18,10 +18,10 @@ Staff runbook (navbar): **Step-by-Step → 1 · Select Site → 2 · Provision �
 
 ```
 1 SELECT SITE (online)            2 PROVISION (online)                 3 ROSTER (offline)              4 SYNC (online)
-researcher signs in (Google       pick one assignment × group pack     Start child mode                leave child mode
-or email/password)                (cohort, classroom, or school)       child taps their name + task    same researcher signs in
-picks the site this tablet        Download pack → roster, tasks,       no network                      syncOfflineRuns → child's
-is collecting for                 assets into Cache Storage            next child taps a different name  runs/trials
+researcher signs in (Google       pick one assignment × group pack     Start child mode                leave child mode → Backup
+or email/password)                (cohort, classroom, or school)       child taps their name + task    file in Downloads; sign in
+picks the site this tablet        Download pack → roster, tasks,       no network                      Sync uploads pending runs
+is collecting for                 assets into Cache Storage            next child taps a different name  (same run ids overwrite)
 ```
 
 The researcher can be a `research_assistant`: the callables gate on permissions that role
@@ -82,7 +82,7 @@ shell/             the launcher: Vue 3 + Vite + vite-plugin-pwa (injectManifest)
   src/sw.ts        precaches the app shell; serves /pack/<id>/… from the levante-packs cache
   src/offline/     auth (Google + email/password + callable client), site (selected site),
                    packStore (runtime pack download, resumable), db (IndexedDB), vault (open
-                   vault or PIN), OfflineAppkit, sync, exportRuns, wipe
+                   vault or PIN), OfflineAppkit, sync, backupRuns (Downloads JSON), wipe
   src/views/       Site, Provision, Roster, Task, Sync, Fair (Step-by-Step), Lock
   src/components/  StaffNav — numbered staff tabs
   test/            Playwright: Select Site → pack → offline play → sync
@@ -216,11 +216,10 @@ firebase --project dev deploy --only \
   with the params *pinned on the administration* (the same snapshot `startTask` reads online)
   plus the roster; the device downloads stimuli, corpora and translations from the public
   bucket with resume and records the corpus SHA-256. Where the pack lives is a storage
-  backend (`storage.ts`): in the browser, Cache Storage served by the service worker under
-  `/pack/<packId>/…`; in the Capacitor app, the app filesystem served through
-  `Capacitor.convertFileSrc` — because the Cache API refuses to store entries for a
-  custom-scheme origin like `capacitor://localhost` ("Request url is not HTTP/HTTPS"), and
-  because files in the app container are outside browser storage-eviction heuristics anyway.
+  backend (`storage.ts`): Android and desktop browsers use Cache Storage served by the
+  service worker under `/pack/<packId>/…`. Capacitor iOS uses the app filesystem through
+  `Capacitor.convertFileSrc` (Cache API refuses the `capacitor://localhost` origin).
+  Capacitor Android is parked — not used in the Android field build.
   Either way core-tasks' `assetBaseUrl` needs no network.
 - **Packs are assembled from content-addressed bundles.** `pack-builder/build-bundles.mjs`
   turns the bucket into one index (`entries: [{name, contentType, offset, length, sha256}]`)
@@ -239,8 +238,11 @@ firebase --project dev deploy --only \
 - **Child mode.** "Start child mode" on the roster hides staff controls (Select Site,
   Provision, Sync, lock, PIDs/birth dates) and makes `#/site`, `#/provision`, `#/sync`, and
   `#/fair` route back to the roster. On a PIN vault, leaving child mode requires that PIN.
-  On an open field-collection vault, the on-site researcher exit control is enough. The
-  flag survives the reload core-tasks needs between tasks and a relaunch. It is a UI guard,
+  On an open field-collection vault, the on-site researcher exit control is enough. Leaving
+  child mode also writes a **Backup** file (`levante-offline-export-….json`) to the tablet
+  Downloads folder — real filesystem storage, outside IndexedDB. The Sync screen **Backup**
+  button does the same on request. The file is plaintext; the app never deletes it.
+  The flag survives the reload core-tasks needs between tasks and a relaunch. It is a UI guard,
   not a security boundary: on a real deployment pair it with the OS kiosk (Guided Access /
   Android screen pinning or an MDM kiosk profile).
 - **Vault.** New field-collection tablets use an open vault (no PIN). Devices that already
@@ -250,9 +252,11 @@ firebase --project dev deploy --only \
 - **Outbox.** Trials are appended in order through a serial write chain (core-tasks fires
   `writeTrial` without awaiting); a crash mid-run keeps every trial written before it.
 - **Ingest (`syncOfflineRuns`).** Validates shape, checks authority, writes trials first and
-  the run doc last (so the trigger sees a complete run), deterministic ids (re-sync overwrites),
+  the run doc last (so the trigger sees a complete run), deterministic ids (re-sync overwrites
+  the same `users/{uid}/runs/{runId}` — Backup then Sync does not create duplicates),
   stores device time and clock-corrected time, flags runs with no matching assignment as
-  `orphan` rather than dropping them. See `CONTRACT.md`.
+  `orphan` rather than dropping them. Sync uploads from IndexedDB; it does not read the
+  Downloads Backup file. See `CONTRACT.md`.
 - **Versions.** Each run records `taskVersion`, `packId`/`packBuiltAt` (= provisioning time),
   `appBuild`, `corpusSha256`, `deviceId`.
 
@@ -265,16 +269,23 @@ firebase --project dev deploy --only \
 | Bundled packs | done: `build-bundles.mjs` + streaming/resumable download; WebKit provisioning 47 s → 1 s |
 | Child (kiosk) mode | done: proctor controls and routes gated behind the PIN; exercised by the e2e |
 | Encrypted outbox + lock screen | done (PIN vault; sealed envelopes; wipe) |
-| Sync engine with per-run status | done (Sync page; idempotent ingest) |
+| Sync engine with per-run status | done (Sync page; idempotent ingest). Backup writes a Downloads JSON copy on Exit child mode and via the Backup button |
 | permissions-core in the callables | done (shared gate; legacy fallback) |
 | Data-contract checklist | documented in `CONTRACT.md`; validators not yet run |
 | iOS Safari (PWA) | verified on an iPad Air simulator, iOS 26.5: provision (~2 min), server killed, roster + task from the service-worker cache |
 | Capacitor iOS app | verified on the same simulator (Xcode 26.6): provision onto the app filesystem via native HTTP, lock/unlock across relaunch, roster, task running from `convertFileSrc` URLs, and sync of the stored run through `syncOfflineRuns`; re-verified on the part-file bundles (266 MB in under a minute, mental-rotation from the stored files). Real hardware still untested |
-| Capacitor Android app | verified on a Pixel Tablet AVD: full loop (provision 266 MB in 47 s into Cache Storage, radios off, roster + task, child mode, sync) driven by `--browser android`. Real hardware still untested |
+| Capacitor Android app | parked (not used). Same Cache Storage path as the PWA; AVD proof kept in RESULTS.md |
 | Trigger completion bug (upstream) | still open in `update-best-run-and-completion.ts` |
 | ROAR tasks, surveys, walk-up enrollment | out of scope |
 
-## Android (Capacitor) — verified on an emulator
+## Android — Chrome PWA
+
+Field Android is the installed Chrome PWA (`npm run build:dev` or the hosted preview).
+Do not `cap sync android` for a field tablet. The Capacitor Android tree (`shell/android`,
+`npm run build:android`) is parked for a later native app; AVD steps that wrap the same
+UI in an APK are in RESULTS.md.
+
+## Android (Capacitor) — parked, verified on an emulator
 
 Toolchain without Android Studio: `brew install --cask android-commandlinetools
 android-platform-tools`, `brew install openjdk@21` (Gradle 8.14 rejects JDK 26), then — the
@@ -318,7 +329,7 @@ should be a person with real devices, in this order:
    assistant, Select Site, then download a real assignment × group pack. The emulator
    seed is not real data. See *Field collection on a tablet* above.
 3. **Real devices, one of each:** an iPad (TestFlight or a dev-signed build) and the cheapest
-   Android tablet the field will actually buy (sideloaded APK). Provision a real dev-project
+   Android tablet the field will actually buy (Chrome, Add to Home screen). Provision a real dev-project
    administration scoped to one school; check the roster and per-child progress against the
    dashboard.
 4. **The offline day:** airplane mode on, reboot the tablet, wait, reopen → lock → PIN →
@@ -327,9 +338,10 @@ should be a person with real devices, in this order:
 5. **Persistence:** leave the device untouched for a week in airplane mode (iOS 7-day eviction
    applies to Safari, not the app, but verify); update the app with a pending outbox and check
    the runs survive.
-6. **Sync correctness:** sync over a poor link (throttled Wi‑Fi, then interrupted mid-sync);
-   confirm each run lands once under the right child, `progress`/`bestRun` update, a second
-   sync creates no duplicates, and the `offlineDevices` row reflects it.
+6. **Sync correctness:** leave child mode (confirm a Backup file appears in Downloads), then
+   sync over a poor link (throttled Wi‑Fi, then interrupted mid-sync); confirm each run lands
+   once under the right child, `progress`/`bestRun` update, a second sync creates no duplicates,
+   and the `offlineDevices` row reflects it.
 7. **Clock skew:** set the tablet clock wrong by hours, collect, sync; `offline.clockOffsetMs`
    should absorb it and `timeStarted` should be right.
 8. **PIN and child mode:** wrong PINs, lock/unlock, wipe; a child trying to leave child mode;
@@ -364,5 +376,6 @@ should be a person with real devices, in this order:
   written through the plugin bridge (base64), the slow part of provisioning there.
 - No size check against `navigator.storage.estimate()` before a download yet.
 - `window.__levanteStore` exposes the decrypting store for tests; strip for production.
-- The export JSON is plaintext by design (courier fallback); protect it operationally.
+- Backup JSON is plaintext by design (courier copy in Downloads); the app never deletes
+  those files — staff must. Sync does not read them.
 - The auto-player in the e2e is a test driver, not a validity claim about responses.

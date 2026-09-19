@@ -3,11 +3,9 @@ import { Directory, Encoding, Filesystem } from '@capacitor/filesystem';
 
 // Where a provisioned pack lives, and the URL core-tasks fetches it from.
 //
-// In the browser (PWA) the pack goes into Cache Storage and the service worker serves it
-// under /pack/<packId>/…. Inside the Capacitor shell the WebView origin is a custom scheme
-// (capacitor://localhost on iOS), which the Cache API refuses to store, so the pack goes on
-// the app's filesystem instead and is served through Capacitor's file URL bridge — no
-// service worker involved, and no browser storage-eviction heuristics.
+// PWA (Android + desktop): Cache Storage, served by the service worker under /pack/<id>/….
+// Capacitor iOS: app filesystem via convertFileSrc (Cache API refuses capacitor://).
+// Capacitor Android is parked and is not selected here.
 
 export interface PackStorage {
   readonly kind: 'cache' | 'filesystem';
@@ -119,12 +117,8 @@ const filesystemStorage: PackStorage = {
   },
 };
 
-// iOS: the WebView origin is a custom scheme (capacitor://), which the Cache API refuses, so
-// packs live on the app filesystem and are served by Capacitor's asset handler (which does
-// Range for media). Android: the origin is https://localhost, so the service worker + Cache
-// Storage path works exactly as in a browser — and Capacitor's Android file server does not
-// answer media (Range) requests for _capacitor_file_ URLs, so the filesystem path is not an
-// option there anyway.
+// Filesystem backend is iOS Capacitor only. Android is the Chrome PWA (Cache Storage);
+// the Capacitor Android project is parked and is not used in the Android field build.
 export const packStorage: PackStorage = Capacitor.getPlatform() === 'ios' ? filesystemStorage : cacheStorage;
 
 export function platformLabel() {
