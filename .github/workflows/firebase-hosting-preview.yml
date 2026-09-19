@@ -30,7 +30,14 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: shell/package-lock.json
+          cache-dependency-path: |
+            shell/package-lock.json
+            core-tasks/task-launcher/package-lock.json
+      - name: Package core-tasks
+        working-directory: core-tasks/task-launcher
+        env:
+          HUSKY: '0'
+        run: npm ci --ignore-scripts && npm run patchPackages && npm run package
       - name: Build
         env:
           HUSKY: '0'
