@@ -27,21 +27,22 @@
           <button type="button" @click="doSignOut">Sign out</button>
         </div>
         <div v-else>
+          <p class="muted">Sign in to upload. Sync stays off until this tablet has pending runs.</p>
           <button
             v-if="googleAuthConfigured"
             type="button"
             class="google-btn"
-            :disabled="!online || !pending.length || syncing"
+            :disabled="!online || syncing"
             @click="signInWithGoogleAndSync"
           >
-            {{ syncing ? 'Syncing…' : `Continue with Google & sync ${pending.length} pending run(s)` }}
+            {{ syncing ? 'Signing in…' : 'Continue with Google' }}
           </button>
           <p v-if="googleAuthConfigured" class="muted">or use email and password</p>
           <form class="row" @submit.prevent="signInAndSync">
             <input v-model="email" type="email" placeholder="researcher email" autocomplete="username" required />
             <input v-model="password" type="password" placeholder="password" autocomplete="current-password" required />
-            <button type="submit" class="primary" :disabled="!online || !pending.length || syncing">
-              {{ syncing ? 'Syncing…' : `Sign in & sync ${pending.length} pending run(s)` }}
+            <button type="submit" class="primary" :disabled="!online || syncing">
+              {{ syncing ? 'Signing in…' : 'Sign in' }}
             </button>
           </form>
         </div>
@@ -142,12 +143,17 @@ async function exportAll() {
   message.value = n ? `Backed up ${n} run(s) to Downloads.` : 'No runs to back up.';
 }
 
+async function afterSignIn() {
+  if (pending.value.length) await sync();
+  else message.value = 'Signed in. No pending runs on this tablet to upload.';
+}
+
 async function signInAndSync() {
   error.value = '';
   try {
     session.value = await signIn(email.value, password.value);
     password.value = '';
-    await sync();
+    await afterSignIn();
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   }
@@ -157,7 +163,7 @@ async function signInWithGoogleAndSync() {
   error.value = '';
   try {
     session.value = await signInWithGoogle();
-    await sync();
+    await afterSignIn();
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   }
