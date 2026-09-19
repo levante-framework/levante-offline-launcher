@@ -1,0 +1,45 @@
+name: Preview Deploy
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+concurrency:
+  group: preview-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  checks: write
+  deployments: write
+  pull-requests: write
+
+jobs:
+  build_and_preview:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shell
+    steps:
+      - uses: actions/checkout@v4
+      - name: Init core-tasks submodule
+        run: git submodule update --init --depth 1 core-tasks
+        working-directory: ${{ github.workspace }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: shell/package-lock.json
+      - name: Build
+        env:
+          HUSKY: '0'
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: npm ci --ignore-scripts && npm run build:dev
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_DEV_ADMIN }}
+          projectId: ${{ secrets.FIREBASE_PROJECT }}
+          entryPoint: ./shell
+          expires: 30d
