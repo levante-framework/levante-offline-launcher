@@ -32,14 +32,7 @@
       <a href="#/site"><button type="button" class="primary">Open select site</button></a>
     </div>
 
-    <div class="card">
-      <h2 style="margin: 0">On this tablet (once)</h2>
-      <p class="muted">
-        In Chrome, menu → <strong>Add to Home screen</strong> → <strong>Install</strong>. Use that
-        icon for Provision, Collect, and Sync. Skip this on a laptop. A Chrome tab still works for
-        a short test; install it if this tablet will sit offline for days.
-      </p>
-    </div>
+    <TabletInstallStep />
 
     <div class="card">
       <div class="row" style="justify-content: space-between">
@@ -105,6 +98,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue';
 import StaffNav from '../components/StaffNav.vue';
+import TabletInstallStep from '../components/TabletInstallStep.vue';
 import { loadFairProgress, type FairProgress } from '../offline/fair';
 import { getSelectedSite } from '../offline/site';
 

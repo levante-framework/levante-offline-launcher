@@ -12,6 +12,7 @@
     <div class="status-bar" v-if="!childMode">
       <span>{{ online ? 'Network: online' : 'Network: offline' }}</span>
       <span>{{ platform }}</span>
+      <span>{{ standalone ? 'Opened from Home screen' : 'Opened in a browser tab' }}</span>
       <span>Pending runs: {{ pendingCount }}</span>
       <a v-if="needsPin" href="#/" title="Lock this tablet with the device PIN" @click.prevent="lockDevice">Lock device</a>
       <a v-if="pack" href="#/" title="Hide staff screens so children only see names and tasks" @click.prevent="enterChildMode">Start child mode</a>
@@ -23,6 +24,11 @@
     </div>
 
     <p v-if="backupNotice && !childMode" class="notice">{{ backupNotice }}</p>
+    <p v-if="!childMode && !standalone" class="notice">
+      You opened Collect Data in a <strong>browser tab</strong>. The pack is on this site either
+      way. For a field day, finish <strong>2a · Install on this tablet</strong> and open the Home
+      screen icon so you return to this window with radios off.
+    </p>
     <p v-if="pack && !childMode" class="notice">
       Tap <strong>Start child mode</strong>, then each child taps their own name, plays a task, and
       comes back here. The next child taps a different name. Do not provision or sign in again
@@ -97,6 +103,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import StaffNav from '../components/StaffNav.vue';
+import { isStandalonePwa } from '../offline/displayMode';
 import { countRuns, listRuns } from '../offline/db';
 import { getSelectedChildId, setSelectedChildId } from '../offline/device';
 import { isChildMode, setChildMode } from '../offline/mode';
@@ -113,6 +120,7 @@ const pendingCount = ref(0);
 const localDone = ref<Record<string, string[]>>({});
 const error = ref('');
 const online = ref(navigator.onLine);
+const standalone = ref(isStandalonePwa());
 const platform = platformLabel();
 const needsPin = pinProtected();
 const childMode = ref(isChildMode());

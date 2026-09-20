@@ -3,11 +3,10 @@
     <h1>2 · Provision</h1>
     <p class="muted">
       Pick a pack for the site chosen in step 1 — each pack is one assignment and the children in
-      one cohort, classroom, or school. On a field tablet, install this page to the Home screen
-      first (Chrome menu → <strong>Add to Home screen</strong> → <strong>Install</strong>). Skip
-      that on a laptop.
+      one cohort, classroom, or school.
     </p>
     <StaffNav current="provision" />
+    <TabletInstallStep />
 
     <div v-if="!backendConfigured" class="error" style="margin-top: 12px">
       This build has no backend configured (VITE_FUNCTIONS_BASE / VITE_AUTH_SIGNIN_URL).
@@ -102,6 +101,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import StaffNav from '../components/StaffNav.vue';
+import TabletInstallStep from '../components/TabletInstallStep.vue';
 import { backendConfigured, callFunction, getSession, type ProctorSession } from '../offline/auth';
 import { logError, logInfo } from '../offline/sentry';
 import { getPack, listPacks, putPack } from '../offline/db';
