@@ -14,14 +14,23 @@ Firestore field changes: `CONTRACT.md`.
 
 ## Field collection on a tablet
 
-Staff runbook (navbar): **Step-by-Step → 1 · Select Site → 2 · Provision → 3 · Roster → 4 · Sync**.
+Staff runbook (navbar): **Step-by-Step → 1 · Select Site → 2 · Provision → 3 · Collect Data → 4 · Sync**.
+
+Dashboard setup (site, children, assignment) can be on a **laptop**. Select Site can also be
+checked on a laptop, but that pick lives in *that* browser — it does not set up the tablet.
+On the tablet, sign in again and pick the same site, or open a pack link from the wizard.
+
+**On the tablet (once), before Provision:** open the launcher in Chrome → menu →
+**Add to Home screen** → **Install**. Use that icon for Provision, Collect, and Sync.
+Skip install on a laptop. A Chrome tab still works for a short test; install it if the
+tablet will sit offline for days. This is not an APK and not the parked Capacitor Android app.
 
 ```
-1 SELECT SITE (online)            2 PROVISION (online)                 3 ROSTER (offline)              4 SYNC (online)
-researcher signs in (Google       pick one assignment × group pack     Start child mode                leave child mode → Backup
-or email/password)                (cohort, classroom, or school)       child taps their name + task    file in Downloads; sign in
-picks the site this tablet        Download pack → roster, tasks,       no network                      Sync uploads pending runs
-is collecting for                 assets into Cache Storage            next child taps a different name  (same run ids overwrite)
+1 SELECT SITE (online)            2 PROVISION (online)                 3 COLLECT (offline)             4 SYNC (online)
+laptop or tablet: sign in         on the tablet: install PWA first     Start child mode                leave child mode → Backup
+and pick the site (tablet must    pick one assignment × group pack     child taps their name + task    file in Downloads; sign in
+repeat this, or open a pack       Download pack → roster, tasks,       no network                      Sync uploads pending runs
+link)                             assets into Cache Storage            next child taps a different name  (same run ids overwrite)
 ```
 
 The researcher can be a `research_assistant`: the callables gate on permissions that role
@@ -39,7 +48,7 @@ objects, or minting a pack link that preselects one pack.
 Field-collection tablets use an **open vault** (no device PIN). Tablets that already have a
 PIN vault still lock until that PIN is entered. Children never authenticate.
 
-### Preview (admin-dev, expires 2026-10-18)
+### Preview (admin-dev, expires 2026-10-19)
 
 Anyone can open these URLs — no GitHub login and no cloned repos. Staff must sign in with a
 **LEVANTE researcher account on `hs-levante-admin-dev`** that already has access to the site.
@@ -283,7 +292,19 @@ firebase --project dev deploy --only \
 
 ## Android — Chrome PWA
 
-Field Android is the installed Chrome PWA (`npm run build:dev` or the hosted preview).
+Field Android is the **installed Chrome PWA** (hosted preview or `npm run build:dev`), not a
+Play Store app.
+
+1. Open the launcher URL in **Chrome** (not the stock Android browser).
+2. Chrome menu (⋮) → **Add to Home screen** → **Install**.
+3. Open the new home-screen icon for Provision, Collect, and Sync.
+
+A normal Chrome tab uses the same origin (same service worker, cache, and IndexedDB) and
+still works for a short supervised test. Install it for days offline: Chrome treats the
+installed app more like durable storage, and staff can reopen it after a reboot with
+radios off without hunting for the URL. A laptop browser is a different origin store —
+that Select Site / pack does not appear on the tablet.
+
 Do not `cap sync android` for a field tablet. The Capacitor Android tree (`shell/android`,
 `npm run build:android`) is parked for a later native app; AVD steps that wrap the same
 UI in an APK are in RESULTS.md.

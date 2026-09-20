@@ -2,8 +2,9 @@
   <div class="page">
     <h1>1 · Select Site</h1>
     <p class="muted">
-      Sign in as the On-site Researcher, then pick the site this tablet will collect for. Needed
-      when your account can see more than one site.
+      Sign in as the On-site Researcher, then pick the site this browser will collect for. Needed
+      when your account can see more than one site. A laptop pick does not carry over — do this
+      again on the tablet (or open a pack link there).
     </p>
     <StaffNav current="site" />
 

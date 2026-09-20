@@ -2,8 +2,10 @@
   <div class="page">
     <h1>Step-by-step</h1>
     <p class="muted">
-      Staff runbook for one tablet. The site, children, and assignment must already exist in this
-      project's dashboard. Children never see this page.
+      Staff runbook for one tablet. Create the site, children, and assignment in the dashboard
+      first — that setup can be on a laptop. This launcher stores the site pick in
+      <em>this</em> browser, so a laptop Select Site does not set up the tablet. Children never
+      see this page.
     </p>
     <StaffNav current="fair" />
 
@@ -15,9 +17,10 @@
         }}</span>
       </div>
       <p class="muted">
-        Sign in on this tablet and pick the site you are collecting for. Researchers with access to
-        more than one site must choose before provisioning. The site, children, and assignment must
-        already exist in the
+        Sign in and pick the site you are collecting for. You can do this on a laptop to confirm
+        the pack exists. On the tablet, sign in again and pick the same site (or open the pack
+        link from the wizard). Researchers with access to more than one site must choose before
+        provisioning. The site, children, and assignment must already exist in the
         <a
           href="https://hs-levante-admin-dev--science-fair-rcdjddph.web.app/science-fair"
           target="_blank"
@@ -27,6 +30,15 @@
       </p>
       <p v-if="siteLabel" class="notice">Current site: {{ siteLabel }}</p>
       <a href="#/site"><button type="button" class="primary">Open select site</button></a>
+    </div>
+
+    <div class="card">
+      <h2 style="margin: 0">On this tablet (once)</h2>
+      <p class="muted">
+        In Chrome, menu → <strong>Add to Home screen</strong> → <strong>Install</strong>. Use that
+        icon for Provision, Collect, and Sync. Skip this on a laptop. A Chrome tab still works for
+        a short test; install it if this tablet will sit offline for days.
+      </p>
     </div>
 
     <div class="card">

@@ -3,7 +3,9 @@
     <h1>2 · Provision</h1>
     <p class="muted">
       Pick a pack for the site chosen in step 1 — each pack is one assignment and the children in
-      one cohort, classroom, or school.
+      one cohort, classroom, or school. On a field tablet, install this page to the Home screen
+      first (Chrome menu → <strong>Add to Home screen</strong> → <strong>Install</strong>). Skip
+      that on a laptop.
     </p>
     <StaffNav current="provision" />
 
