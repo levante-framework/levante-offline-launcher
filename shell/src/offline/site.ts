@@ -116,10 +116,69 @@ export async function loadSiteCatalog(): Promise<SiteCatalog> {
     if (admin.siteId) ids.add(admin.siteId);
     for (const siteId of admin.districts) ids.add(siteId);
   }
+  const missingNames = [...ids].filter((id) => !names[id] || names[id] === id);
+  const districtNameById = await districtNames(missingNames);
   const sites = [...ids]
-    .map((id) => ({ id, name: names[id] || id }))
+    .map((id) => {
+      const fromToken = names[id];
+      const name = fromToken && fromToken !== id ? fromToken : districtNameById[id] || id;
+      return { id, name };
+    })
     .sort((a, b) => a.name.localeCompare(b.name));
   return { administrations, sites };
+}
+
+async function districtNames(ids: string[]): Promise<Record<string, string>> {
+  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID as string | undefined;
+  const token = getSession()?.idToken;
+  if (!projectId || !token || ids.length === 0) return {};
+  const names: Record<string, string> = {};
+  try {
+    for (let i = 0; i < ids.length; i += 30) {
+      const chunk = ids.slice(i, i + 30);
+      const res = await fetch(
+        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`,
+        {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            structuredQuery: {
+              from: [{ collectionId: 'districts' }],
+              where: {
+                fieldFilter: {
+                  field: { fieldPath: '__name__' },
+                  op: 'IN',
+                  value: {
+                    arrayValue: {
+                      values: chunk.map((id) => ({
+                        referenceValue: `projects/${projectId}/databases/(default)/documents/districts/${id}`,
+                      })),
+                    },
+                  },
+                },
+              },
+              select: { fields: [{ fieldPath: 'name' }] },
+            },
+          }),
+        },
+      );
+      if (!res.ok) {
+        logError('district name lookup failed', new Error(`HTTP ${res.status}`));
+        continue;
+      }
+      const rows = (await res.json()) as Array<{
+        document?: { name?: string; fields?: { name?: { stringValue?: string } } };
+      }>;
+      for (const row of rows) {
+        const id = row.document?.name?.split('/').pop();
+        const name = row.document?.fields?.name?.stringValue?.trim();
+        if (id && name) names[id] = name;
+      }
+    }
+  } catch (err) {
+    logError('district name lookup failed', err);
+  }
+  return names;
 }
 
 async function loadAdministrations(siteIds: string[]): Promise<Array<Record<string, unknown>>> {
