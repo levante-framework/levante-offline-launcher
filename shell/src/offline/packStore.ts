@@ -382,7 +382,13 @@ async function downloadFromListing(pack: PackRecord, { id, progress, report }: S
   // 4. Corpora + translations, hashing corpora for provenance.
   for (const rel of extras) {
     progress.current = rel;
-    const stored = await storeObject(id, rel);
+    // A missing translation file is skipped; core-tasks runs without it.
+    const stored = await storeObject(id, rel, rel.startsWith('translations/'));
+    if (!stored) {
+      progress.filesDone++;
+      report();
+      continue;
+    }
     progress.bytes += stored.bytes;
     progress.filesDone++;
     const corpusTask = Object.keys(corpora).find((t) => rel.startsWith(`corpus/${t}/`));
@@ -423,10 +429,17 @@ async function listPrefix(prefix: string): Promise<GcsItem[]> {
 }
 
 // Resumable: an object already stored is not fetched again.
-async function storeObject(packId: string, objectName: string): Promise<{ bytes: number; buf: ArrayBuffer | null }> {
+function storeObject(packId: string, objectName: string, optional?: false): Promise<{ bytes: number; buf: ArrayBuffer | null }>;
+function storeObject(packId: string, objectName: string, optional: boolean): Promise<{ bytes: number; buf: ArrayBuffer | null } | null>;
+async function storeObject(
+  packId: string,
+  objectName: string,
+  optional = false,
+): Promise<{ bytes: number; buf: ArrayBuffer | null } | null> {
   if (await packStorage.has(packId, objectName)) return { bytes: 0, buf: null };
   const url = `${GCS}/${BUCKET}/${objectName.split('/').map(encodeURIComponent).join('/')}`;
-  const res = await fetchWithRetry(url);
+  const res = optional ? await fetchWithRetry(url, 4, true) : await fetchWithRetry(url);
+  if (!res) return null;
   const buf = await res.arrayBuffer();
   await packStorage.putBytes(packId, objectName, buf, res.headers.get('content-type') ?? 'application/octet-stream');
   return { bytes: buf.byteLength, buf };
@@ -436,11 +449,14 @@ async function fetchJson(url: string) {
   return (await fetchWithRetry(url)).json();
 }
 
-async function fetchWithRetry(url: string, tries = 4): Promise<Response> {
+function fetchWithRetry(url: string, tries?: number): Promise<Response>;
+function fetchWithRetry(url: string, tries: number, optional: true): Promise<Response | null>;
+async function fetchWithRetry(url: string, tries = 4, optional = false): Promise<Response | null> {
   let lastErr: unknown;
   for (let i = 0; i < tries; i++) {
     try {
       const res = await fetch(url);
+      if (res.status === 404 && optional) return null;
       if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
       return res;
     } catch (err) {
