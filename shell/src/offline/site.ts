@@ -9,7 +9,15 @@ export interface AdministrationSummary {
   name: string;
   dateClosed: string | null;
   tasks: string[];
+  siteId: string | null;
   districts: string[];
+}
+
+export function administrationMatchesSite(
+  admin: Pick<AdministrationSummary, 'siteId' | 'districts'>,
+  siteId: string,
+): boolean {
+  return admin.siteId === siteId || admin.districts.includes(siteId);
 }
 
 export interface SelectedSite {
@@ -76,11 +84,9 @@ export function readPackLink(): PackLink | null {
 }
 
 export async function loadSiteCatalog(): Promise<SiteCatalog> {
-  const [adminRes, savedRes] = await Promise.all([
-    callFunction<{ status: string; data: Array<Record<string, unknown>> }>('getAdministrations', {
-      idsOnly: false,
-      summary: true,
-    }),
+  const namesFromToken = siteNamesFromToken();
+  const [adminRows, savedRes] = await Promise.all([
+    loadAdministrations(Object.keys(namesFromToken)),
     callFunction<{ status: string; packs: Array<{ siteId?: string; siteName?: string }> }>(
       'listOfflinePacks',
       {},
@@ -89,7 +95,7 @@ export async function loadSiteCatalog(): Promise<SiteCatalog> {
       return { status: 'ok', packs: [] };
     }),
   ]);
-  const administrations = (adminRes.data ?? []).map((a) => ({
+  const administrations = adminRows.map((a) => ({
     id: String(a.id),
     name: String(a.publicName ?? a.name ?? a.id),
     dateClosed: toDateString(a.dateClosed),
@@ -98,20 +104,47 @@ export async function loadSiteCatalog(): Promise<SiteCatalog> {
       : Array.isArray(a.assessments)
         ? a.assessments.map((x: { taskId?: string }) => String(x.taskId))
         : [],
+    siteId: typeof a.siteId === 'string' && a.siteId ? a.siteId : null,
     districts: Array.isArray(a.districts) ? a.districts.map((id: unknown) => String(id)) : [],
   }));
-  const names: Record<string, string> = { ...siteNamesFromToken() };
+  const names: Record<string, string> = { ...namesFromToken };
   for (const pack of savedRes.packs ?? []) {
     if (pack.siteId && pack.siteName) names[pack.siteId] = pack.siteName;
   }
   const ids = new Set<string>();
   for (const admin of administrations) {
+    if (admin.siteId) ids.add(admin.siteId);
     for (const siteId of admin.districts) ids.add(siteId);
   }
   const sites = [...ids]
     .map((id) => ({ id, name: names[id] || id }))
     .sort((a, b) => a.name.localeCompare(b.name));
   return { administrations, sites };
+}
+
+async function loadAdministrations(siteIds: string[]): Promise<Array<Record<string, unknown>>> {
+  const requests = siteIds.length
+    ? siteIds.map((siteId) =>
+        callFunction<{ status: string; data: Array<Record<string, unknown>> }>('getAdministrations', {
+          idsOnly: false,
+          summary: true,
+          siteId,
+        }),
+      )
+    : [
+        callFunction<{ status: string; data: Array<Record<string, unknown>> }>('getAdministrations', {
+          idsOnly: false,
+          summary: true,
+        }),
+      ];
+  const responses = await Promise.all(requests);
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const res of responses) {
+    for (const row of res.data ?? []) {
+      if (row?.id != null) byId.set(String(row.id), row);
+    }
+  }
+  return [...byId.values()];
 }
 
 function siteNamesFromToken(): Record<string, string> {
@@ -124,7 +157,8 @@ function siteNamesFromToken(): Record<string, string> {
     const payload = JSON.parse(atob(pad)) as { siteNames?: Record<string, unknown> };
     const names: Record<string, string> = {};
     for (const [id, name] of Object.entries(payload.siteNames ?? {})) {
-      if (typeof name === 'string' && name.trim()) names[id] = name;
+      if (!id) continue;
+      names[id] = typeof name === 'string' && name.trim() ? name : id;
     }
     return names;
   } catch {

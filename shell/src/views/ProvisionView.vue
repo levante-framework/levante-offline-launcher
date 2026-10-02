@@ -109,6 +109,7 @@ import { deviceInfo } from '../offline/device';
 import { deletePack, type DownloadProgress, downloadPack, getActivePackId, markPackError, resumeDownload, setActivePackId } from '../offline/packStore';
 import { storageHeadroom } from '../offline/storage';
 import {
+  administrationMatchesSite,
   getSelectedSite,
   loadSiteCatalog,
   readPackLink,
@@ -155,7 +156,7 @@ const currentSiteLabel = computed(() => selectedSite?.name || selectedSiteId.val
 const siteAdminCount = computed(() => {
   const siteId = selectedSiteId.value;
   if (!siteId) return 0;
-  return administrations.value.filter((item) => item.districts.includes(siteId)).length;
+  return administrations.value.filter((item) => administrationMatchesSite(item, siteId)).length;
 });
 
 const session = ref<ProctorSession | null>(getSession());
@@ -257,7 +258,7 @@ async function loadPacksForSite() {
   if (!siteId) return;
   eventApplying.value = true;
   try {
-    const siteAdmins = administrations.value.filter((item) => item.districts.includes(siteId));
+    const siteAdmins = administrations.value.filter((item) => administrationMatchesSite(item, siteId));
     const groups = await Promise.all(
       siteAdmins.map(async (admin) => {
         try {

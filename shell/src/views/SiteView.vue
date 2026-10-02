@@ -137,7 +137,8 @@ async function loadSites() {
     const catalog = await loadSiteCatalog();
     sites.value = catalog.sites;
     const link = readPackLink();
-    const fromLink = link ? catalog.administrations.find((item) => item.id === link.admin)?.districts[0] : null;
+    const linked = link ? catalog.administrations.find((item) => item.id === link.admin) : null;
+    const fromLink = linked?.siteId || linked?.districts[0] || null;
     if (fromLink && catalog.sites.some((site) => site.id === fromLink)) {
       pickedId.value = fromLink;
     } else if (!pickedId.value || !catalog.sites.some((site) => site.id === pickedId.value)) {
