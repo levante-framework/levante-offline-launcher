@@ -45,7 +45,10 @@
     </div>
 
     <div class="card" v-if="session">
-      <h2 style="margin-top: 0">Which site?</h2>
+      <div class="row" style="justify-content: space-between; align-items: center">
+        <h2 style="margin: 0">Which site?</h2>
+        <button type="button" :disabled="loading || !online" @click="loadSites">Refresh</button>
+      </div>
       <p class="muted" style="margin-top: 0">
         Packs on the next step are limited to the site you pick here.
       </p>
@@ -66,7 +69,7 @@
           <div class="muted mono">{{ site.id }}</div>
         </button>
       </div>
-      <p v-else class="notice">This account has no site assignments.</p>
+      <p v-else class="notice">This account has no open assignments.</p>
       <div class="row" style="margin-top: 12px" v-if="picked">
         <a href="#/provision">
           <button type="button" class="primary big" @click="confirmSite">Continue to provision</button>

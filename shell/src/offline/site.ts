@@ -95,7 +95,7 @@ export async function loadSiteCatalog(): Promise<SiteCatalog> {
       return { status: 'ok', packs: [] };
     }),
   ]);
-  const administrations = adminRows.map((a) => ({
+  const administrations = adminRows.filter(isOpenAssignment).map((a) => ({
     id: String(a.id),
     name: String(a.publicName ?? a.name ?? a.id),
     dateClosed: toDateString(a.dateClosed),
@@ -182,20 +182,14 @@ async function districtNames(ids: string[]): Promise<Record<string, string>> {
 }
 
 async function loadAdministrations(siteIds: string[]): Promise<Array<Record<string, unknown>>> {
-  const requests = siteIds.length
-    ? siteIds.map((siteId) =>
-        callFunction<{ status: string; data: Array<Record<string, unknown>> }>('getAdministrations', {
-          idsOnly: false,
-          summary: true,
-          siteId,
-        }),
-      )
-    : [
-        callFunction<{ status: string; data: Array<Record<string, unknown>> }>('getAdministrations', {
-          idsOnly: false,
-          summary: true,
-        }),
-      ];
+  const requests = (siteIds.length ? siteIds : [undefined]).map((siteId) =>
+    callFunction<{ status: string; data: Array<Record<string, unknown>> }>('getAdministrations', {
+      idsOnly: false,
+      summary: true,
+      restrictToOpenAdministrations: true,
+      ...(siteId ? { siteId } : {}),
+    }),
+  );
   const responses = await Promise.all(requests);
   const byId = new Map<string, Record<string, unknown>>();
   for (const res of responses) {
@@ -226,9 +220,26 @@ function siteNamesFromToken(): Record<string, string> {
 }
 
 function toDateString(value: unknown): string | null {
+  const ms = timestampMs(value);
+  return ms == null ? null : new Date(ms).toISOString().slice(0, 10);
+}
+
+function timestampMs(value: unknown): number | null {
   if (!value) return null;
-  if (typeof value === 'string') return value.slice(0, 10);
+  if (typeof value === 'string') {
+    const ms = Date.parse(value.length === 10 ? `${value}T00:00:00.000Z` : value);
+    return Number.isNaN(ms) ? null : ms;
+  }
+  if (value instanceof Date) return value.getTime();
   const v = value as { _seconds?: number; seconds?: number };
   const secs = v._seconds ?? v.seconds;
-  return typeof secs === 'number' ? new Date(secs * 1000).toISOString().slice(0, 10) : null;
+  return typeof secs === 'number' ? secs * 1000 : null;
+}
+
+/** Open means dateOpened has passed and dateClosed is still ahead. */
+function isOpenAssignment(row: Record<string, unknown>, now = Date.now()): boolean {
+  const closed = timestampMs(row.dateClosed);
+  if (closed == null || closed <= now) return false;
+  const opened = timestampMs(row.dateOpened);
+  return opened == null || opened <= now;
 }

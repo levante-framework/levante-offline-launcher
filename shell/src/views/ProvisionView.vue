@@ -13,7 +13,10 @@
     </div>
 
     <div class="card" v-if="session && selectedSiteId">
-      <h2 style="margin-top: 0">Packs for this site</h2>
+      <div class="row" style="justify-content: space-between; align-items: center">
+        <h2 style="margin: 0">Packs for this site</h2>
+        <button type="button" :disabled="!!splash || !online" @click="refreshSiteCatalog">Refresh</button>
+      </div>
       <p class="muted" style="margin-top: 0">
         Site: <strong>{{ currentSiteLabel }}</strong>
         · <a href="#/site">change site</a>
@@ -39,7 +42,7 @@
         This site has {{ siteAdminCount }} assignment(s), but none list a cohort, classroom, or
         school. Add one of those on the dashboard — a site-only assignment cannot be provisioned.
       </p>
-      <p v-else-if="selectedSiteId" class="notice">No assignments were found for this site.</p>
+      <p v-else-if="selectedSiteId" class="notice">No open assignments were found for this site.</p>
       <p v-else class="notice">This account has no site assignments to provision.</p>
       <div class="row" style="margin-top: 12px" v-if="selectedPreparedId">
         <button type="button" class="primary big" :disabled="!canProvision" @click="provision">
