@@ -186,7 +186,6 @@ async function loadAdministrations(siteIds: string[]): Promise<Array<Record<stri
     callFunction<{ status: string; data: Array<Record<string, unknown>> }>('getAdministrations', {
       idsOnly: false,
       summary: true,
-      restrictToOpenAdministrations: true,
       ...(siteId ? { siteId } : {}),
     }),
   );
