@@ -14,6 +14,7 @@
     <SiteView v-else-if="route.name === 'site'" />
     <FairView v-else-if="route.name === 'fair'" />
   </template>
+  <p v-if="locked || route.name !== 'task'" class="build-stamp muted">{{ buildLabel }}</p>
 </template>
 
 <script setup lang="ts">
@@ -33,6 +34,16 @@ import TaskView from './views/TaskView.vue';
 // PIN vault still lock until that PIN is entered.
 const locked = ref(pinProtected() && !isUnlocked());
 const ready = ref(false);
+
+const buildLabel = formatBuild(__APP_BUILD__);
+
+function formatBuild(build: string): string {
+  const match = /^(.+)-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/.exec(build);
+  if (!match) return build;
+  const [, sha, year, month, day, hour, minute] = match;
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${sha} · ${Number(day)} ${months[Number(month) - 1]} ${year}, ${hour}:${minute} UTC`;
+}
 
 // Hash routing keeps the shell a single precached document, which is what the
 // service worker needs to bring the app up with no network at all.
