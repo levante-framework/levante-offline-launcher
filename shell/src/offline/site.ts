@@ -79,6 +79,7 @@ export async function loadSiteCatalog(): Promise<SiteCatalog> {
   const [adminRes, savedRes] = await Promise.all([
     callFunction<{ status: string; data: Array<Record<string, unknown>> }>('getAdministrations', {
       idsOnly: false,
+      summary: true,
     }),
     callFunction<{ status: string; packs: Array<{ siteId?: string; siteName?: string }> }>(
       'listOfflinePacks',
@@ -92,7 +93,11 @@ export async function loadSiteCatalog(): Promise<SiteCatalog> {
     id: String(a.id),
     name: String(a.publicName ?? a.name ?? a.id),
     dateClosed: toDateString(a.dateClosed),
-    tasks: Array.isArray(a.assessments) ? a.assessments.map((x: { taskId?: string }) => String(x.taskId)) : [],
+    tasks: Array.isArray(a.tasks)
+      ? a.tasks.map((taskId: unknown) => String(taskId))
+      : Array.isArray(a.assessments)
+        ? a.assessments.map((x: { taskId?: string }) => String(x.taskId))
+        : [],
     districts: Array.isArray(a.districts) ? a.districts.map((id: unknown) => String(id)) : [],
   }));
   const names: Record<string, string> = { ...siteNamesFromToken() };
